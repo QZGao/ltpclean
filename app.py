@@ -132,6 +132,9 @@ def button_clicked(data):
     player_config = get_user_config(data)
     user_config[user_id] = player_config
     
+    # 重置游戏状态：清空之前的命令和状态
+    user_cmd[user_id] = default_cmd_str  # 重置按键命令
+    
     # init simulator first frame
     with torch.no_grad():
         if player_config['random_init']:
@@ -148,7 +151,7 @@ def button_clicked(data):
         
         zeta,obs = init_simulator(model, vae, batch_data)
 
-    user_zeta[user_id] = zeta
+    user_zeta[user_id] = zeta  # 重置zeta状态
     # decoded_obs 形状是 [1, 3, 256, 256]，obs[0] 得到 [3, 256, 256]
     user_queues[user_id].put((obs[0].cpu().numpy(), "None", "init"))
 
@@ -200,12 +203,26 @@ def model_inference(user_id, stop_event):
             action = torch.tensor(action, device=cfg.device).long()
             zeta = user_zeta[user_id]
             with torch.no_grad():
-                zeta, obs= model.df_model.step(zeta, action.float(), sampling_timesteps)
+                # Diffusion step
+                step_start = time.time()
+                zeta, obs = model.df_model.step(zeta, action.float(), sampling_timesteps)
+                step_time = time.time() - step_start
+                
+                # VAE decode
+                decode_start = time.time()
                 obs = vae.decode(obs / 0.1355)
+                decode_time = time.time() - decode_start
+                
             user_zeta[user_id] = zeta
-            end_time = time.time()
+            # 转移到CPU并转换numpy（只在最后做一次）
+            transfer_start = time.time()
             obs = obs[0].cpu().numpy()
-            duration = f"{end_time - start_time:.2f} second"
+            transfer_time = time.time() - transfer_start
+            
+            end_time = time.time()
+            total_time = end_time - start_time
+            # 显示详细时间分解（可选，用于调试）
+            duration = f"{total_time:.3f}s (step:{step_time:.3f} decode:{decode_time:.3f} transfer:{transfer_time:.3f})"
             rest_time = frame_rate - (end_time - start_time)
             if rest_time > 0:
                 time.sleep(rest_time)
