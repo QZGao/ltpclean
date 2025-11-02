@@ -114,20 +114,24 @@
                     Null
                   </button>
               </div>
-          <div>
+          </div>
               <br>
               <br>
               <br>
           <div class="layui-row">
               <h4>You can use the arrow keys on the keyboard to move and the `z` to attack.</h4>
-          <div>
+          </div>
 
       </div>
     </div>
     <script src="//unpkg.com/layui@2.9.18/dist/layui.js"></script>
 
     <script>
-        var socket = io.connect('http://' + document.domain + ':' + location.port);
+        var socket = io.connect({
+            transports: ['websocket', 'polling'],
+            upgrade: true,
+            rememberUpgrade: false
+        });
 
         document.getElementById('start-button').addEventListener('click', function() {
             const randomInit = document.querySelector('input[name="random_init"]:checked').value;
@@ -142,12 +146,18 @@
 
         const canvas = document.getElementById('noiseImage');
         const context = canvas.getContext('2d');
-        const image = new Image();
+
         socket.on('update_frame', function(data) {
-            image.src = 'data:image/png;base64,' + data.image;
-            image.onload = function() {
-                context.drawImage(image, 0, 0, canvas.width, canvas.height);
-            }
+
+            // Create fresh image every frame to avoid buffering issues
+            var img = new Image();
+            img.onload = function () {
+                context.clearRect(0, 0, canvas.width, canvas.height);
+                context.drawImage(img, 0, 0, canvas.width, canvas.height);
+            };
+
+            // Assign src AFTER onload binding
+            img.src = 'data:image/png;base64,' + data.image;
         });
 
         const cmdDisplay = document.getElementById('cmd');
@@ -209,7 +219,6 @@
 
         function handleKeyEvent(event, type) {
             const key = event.key;
-            const shift = event.shiftKey;
             let command = null;
 
             // 检查组合键

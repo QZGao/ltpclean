@@ -4,7 +4,7 @@ from einops import rearrange
 from models.diffusion.df_base import DiffusionForcingBase
 from config.Config_DF import ConfigDF
 from config.Config_VAE import Config
-from models.vae.autoencoder import AutoencoderKL
+# from models.vae.autoencoder import AutoencoderKL
 
 class ZetaEnv():
     def __init__(self,zeta):
@@ -21,7 +21,8 @@ class Algorithm(nn.Module):
         self.df_model = DiffusionForcingBase(self.config,device)
         self.use_ldm = 'ldm' in self.config.model_name
         if self.use_ldm:
-            self.vae = AutoencoderKL(image_key='observations')
+            # self.vae = AutoencoderKL(image_key='observations')
+            self.vae = None
 
     # observation (b t), c, h,w = (1,c,h,w),
     # obs[0:1] = (1,c,h,w)

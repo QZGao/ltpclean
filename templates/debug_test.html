@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>调试测试页面</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.0/socket.io.min.js"></script>
+</head>
+<body>
+    <h1>SocketIO连接测试</h1>
+    <div id="status">连接状态: 检查中...</div>
+    <div id="messages"></div>
+    
+    <button onclick="testStartGame()">测试Start Game</button>
+    <button onclick="testConnection()">测试连接</button>
+    
+    <script>
+        var socket = io.connect({
+            transports: ['websocket', 'polling'],
+            upgrade: true,
+            rememberUpgrade: false
+        });
+        
+        function addMessage(msg) {
+            const div = document.getElementById('messages');
+            div.innerHTML += '<div>' + new Date().toLocaleTimeString() + ': ' + msg + '</div>';
+        }
+        
+        socket.on('connect', function() {
+            document.getElementById('status').textContent = '连接状态: ✓ 已连接';
+            addMessage('SocketIO连接成功');
+        });
+        
+        socket.on('disconnect', function() {
+            document.getElementById('status').textContent = '连接状态: ✗ 断开连接';
+            addMessage('SocketIO连接断开');
+        });
+        
+        socket.on('connect_error', function(error) {
+            document.getElementById('status').textContent = '连接状态: ✗ 连接错误';
+            addMessage('连接错误: ' + error);
+        });
+        
+        socket.on('update_person', function(data) {
+            addMessage('收到update_person事件: ' + JSON.stringify(data));
+        });
+        
+        socket.on('update_frame', function(data) {
+            addMessage('收到update_frame事件: 图像数据长度=' + data.image.length);
+        });
+        
+        socket.on('update_cmd', function(data) {
+            addMessage('收到update_cmd事件: ' + JSON.stringify(data));
+        });
+        
+        function testConnection() {
+            addMessage('测试连接...');
+            socket.emit('test', {message: 'hello'});
+        }
+        
+        function testStartGame() {
+            addMessage('发送start_game事件...');
+            socket.emit('start_game', {
+                random_init: 'false',
+                block: 'false',
+                denosing_step: '4'
+            });
+        }
+    </script>
+</body>
+</html>
+
