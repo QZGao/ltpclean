@@ -12,6 +12,9 @@
             height: 256px;
             border: 1px solid black;
             margin-left: 30px;
+            image-rendering: pixelated; /* 保持像素风格，避免模糊 */
+            image-rendering: -moz-crisp-edges; /* Firefox */
+            image-rendering: crisp-edges; /* 标准属性 */
         }
     #dur, #cmd {
         margin-left: 30px;
@@ -24,7 +27,7 @@
     <div class="layui-row">
         <h3> Press `Start Game` to init the game 🚀</h3>
       <div class="layui-col-xs4">
-        <canvas id="noiseImage" width="300" height="300"></canvas>
+        <canvas id="noiseImage" width="128" height="128"></canvas>
         <h4 id="dur"></h4>
         <h4 id="cmd"></h4>
       </div>
@@ -59,8 +62,10 @@
                   </div>
                   <div class="layui-col-xs4">
                     <div class="layui-form">
+                        <input type="radio" name="denosing_step" value="1" title="1 (最快)">
+                        <input type="radio" name="denosing_step" value="2" title="2 (推荐)">
                         <input type="radio" name="denosing_step" value="4" title="4" checked>
-                        <input type="radio" name="denosing_step" value="8" title="8"> 
+                        <input type="radio" name="denosing_step" value="8" title="8 (高质量)"> 
                     </div>
                   </div>
             </div>
@@ -153,6 +158,9 @@
             var img = new Image();
             img.onload = function () {
                 context.clearRect(0, 0, canvas.width, canvas.height);
+                // 绘制128x128的图像，canvas会自动放大到256x256显示（通过CSS）
+                // 使用imageSmoothingEnabled=false保持像素风格
+                context.imageSmoothingEnabled = false;
                 context.drawImage(img, 0, 0, canvas.width, canvas.height);
             };
 

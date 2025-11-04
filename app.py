@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template
 from flask_socketio import SocketIO, emit, join_room, leave_room
 import base64
 import numpy as np
@@ -12,7 +12,7 @@ from utils import get_data
 from algorithm import Algorithm
 from models.vae.sdvae import SDVAE
 import config.configTrain as cfg
-from infer_test import init_simulator, get_web_img,get_img_data
+from infer_test import init_simulator, get_web_img
 import os
 """Model info"""
 frame_rate = 1 / 20
@@ -30,10 +30,6 @@ vae.eval().to(cfg.device)
 
 init_data = get_data()
 
-# with torch.no_grad():
-#     init_obs, init_zeta = init_simulator(model, init_data)
-
-
 app = Flask(__name__)
 socketio = SocketIO(app,
                     cors_allowed_origins="*",
@@ -46,6 +42,7 @@ socketio = SocketIO(app,
 user_zeta = {}
 user_numpy_data = {}
 user_queues = {}
+user_transfer_queues = {}  # 用于传递GPU tensor到传输线程
 user_cmd = {}
 user_config = {}
 user_threads = {}
@@ -96,8 +93,9 @@ def get_user_config(data):
         ret['random_init'] = True
     if block == 'true':
         ret['block'] = True
-    if denosing_step == '8':
-        ret['denosing_step'] = 8
+    # 支持更多denoising step选项
+    if denosing_step in ['1', '2', '4', '8']:
+        ret['denosing_step'] = int(denosing_step)
     return ret
 
 
@@ -150,30 +148,26 @@ def button_clicked(data):
             batch_data["observations"] = batch_data["observations"].squeeze(1)  # [1, 1, 3, 256, 256] -> [1, 3, 256, 256]
         
         zeta,obs = init_simulator(model, vae, batch_data)
+        
+        # 压缩初始帧从256x256到128x128
+        obs_gpu = obs[0]
+        obs_gpu = torch.nn.functional.interpolate(
+            obs_gpu.unsqueeze(0),
+            size=(128, 128),
+            mode='bilinear',
+            align_corners=False
+        ).squeeze(0)
+        obs_np = obs_gpu.cpu().numpy()
 
     user_zeta[user_id] = zeta  # 重置zeta状态
-    # decoded_obs 形状是 [1, 3, 256, 256]，obs[0] 得到 [3, 256, 256]
-    user_queues[user_id].put((obs[0].cpu().numpy(), "None", "init"))
+    # 使用压缩后的128x128图像
+    user_queues[user_id].put((obs_np, "None", "init (128x128)"))
 
     # record player
     online_player[user_id] = user_id
     socketio.emit('update_person', {'num': len(online_player)})
 
 
-# @socketio.on('start_game')
-# def button_clicked(data):
-#     user_id = request.sid
-#     player_config = get_user_config(data)
-#     user_config[user_id] = player_config
-#
-#     if player_config['random_init']:
-#         random_data = get_data(if_random=True)
-#         user_numpy_data[user_id] = random_data
-#     else:
-#         user_numpy_data[user_id] = init_data
-#
-#     online_player[user_id] = user_id
-#     socketio.emit('update_person', {'num': len(online_player)})
 
 def model_inference(user_id, stop_event):
     while not stop_event.is_set():
@@ -183,13 +177,29 @@ def model_inference(user_id, stop_event):
                 zeta,obs = init_simulator(model, vae, user_numpy_data[user_id])
             user_zeta[user_id] = zeta
             end_time = time.time()
-            obs = obs[0].cpu().numpy()
-            duration = f"{end_time - start_time:.2f} second"
-            rest_time = frame_rate - (end_time - start_time)
+            
+            # 在GPU上压缩图像从256x256到128x128（异步执行，不阻塞）
+            with torch.no_grad():
+                obs_gpu = obs[0]  # [3, 256, 256]
+                resize_start = time.time()
+                obs_gpu = torch.nn.functional.interpolate(
+                    obs_gpu.unsqueeze(0),
+                    size=(128, 128),
+                    mode='bilinear',
+                    align_corners=False
+                ).squeeze(0)  # [3, 128, 128]
+                resize_time = time.time() - resize_start
+            
+            inference_time = time.time() - start_time
+            duration = f"{inference_time:.3f}s (resize:{resize_time:.3f}"
+            
+            # 将GPU tensor和元数据放入传输队列（非阻塞）
+            user_transfer_queues[user_id].put((obs_gpu, "None", duration, start_time, 0, 0, resize_time))
+            
+            rest_time = frame_rate - inference_time
             if rest_time > 0:
                 time.sleep(rest_time)
 
-            user_queues[user_id].put((obs, "None", duration))
             user_numpy_data.pop(user_id, None)
         elif user_id in user_cmd.keys() and user_id in user_zeta.keys():
             start_time = time.time()
@@ -213,22 +223,64 @@ def model_inference(user_id, stop_event):
                 obs = vae.decode(obs / 0.1355)
                 decode_time = time.time() - decode_start
                 
+                # 在GPU上压缩图像从256x256到128x128（异步执行）
+                obs_gpu = obs[0]
+                resize_start = time.time()
+                obs_gpu = torch.nn.functional.interpolate(
+                    obs_gpu.unsqueeze(0),
+                    size=(128, 128),
+                    mode='bilinear',
+                    align_corners=False
+                ).squeeze(0)
+                resize_time = time.time() - resize_start
+                
             user_zeta[user_id] = zeta
-            # 转移到CPU并转换numpy（只在最后做一次）
-            transfer_start = time.time()
-            obs = obs[0].cpu().numpy()
-            transfer_time = time.time() - transfer_start
             
-            end_time = time.time()
-            total_time = end_time - start_time
-            # 显示详细时间分解（可选，用于调试）
-            duration = f"{total_time:.3f}s (step:{step_time:.3f} decode:{decode_time:.3f} transfer:{transfer_time:.3f})"
-            rest_time = frame_rate - (end_time - start_time)
+            # 计算推理耗时（不包括传输时间）
+            inference_time = time.time() - start_time
+            
+            # 将GPU tensor放入传输队列，让传输线程异步处理
+            duration_prefix = f"{inference_time:.3f}s (step:{step_time:.3f} decode:{decode_time:.3f} resize:{resize_time:.3f}"
+            user_transfer_queues[user_id].put((obs_gpu, key, duration_prefix, start_time, step_time, decode_time, resize_time))
+            
+            # 计算剩余时间（只考虑推理时间，传输在后台进行）
+            rest_time = frame_rate - inference_time
             if rest_time > 0:
                 time.sleep(rest_time)
-
-            user_queues[user_id].put((obs, key, duration))
         else:
+            time.sleep(0.01)
+
+
+def transfer_gpu_to_cpu(user_id, stop_event):
+    """异步传输线程：专门负责GPU->CPU转换，不阻塞推理线程"""
+    while not stop_event.is_set():
+        try:
+            # 非阻塞获取待传输的tensor
+            obs_gpu, cmd_str_, duration_prefix, start_time, step_time, decode_time, resize_time = user_transfer_queues[user_id].get(timeout=0.01)
+            
+            # 执行GPU->CPU传输（.cpu()会自动等待GPU上的resize操作完成）
+            transfer_start = time.time()
+            obs = obs_gpu.cpu().numpy()
+            transfer_time = time.time() - transfer_start
+            
+            # 验证尺寸（调试用，只在第一次出错时打印）
+            if obs.shape != (3, 128, 128):
+                if not hasattr(transfer_gpu_to_cpu, '_warned_shape'):
+                    print(f"⚠️ 警告: 数组尺寸不正确，期望(3,128,128)，实际{obs.shape}")
+                    transfer_gpu_to_cpu._warned_shape = True
+            
+            # 格式化传输时间字符串
+            transfer_time_str = f"{transfer_time:.6f}" if transfer_time < 0.001 else f"{transfer_time:.3f}"
+            
+            # 组装完整的duration信息（duration_prefix已包含resize时间）
+            duration = f"{duration_prefix} transfer:{transfer_time_str})"
+            
+            # 将转换后的numpy数组放入结果队列
+            user_queues[user_id].put((obs, cmd_str_, duration))
+        except queue.Empty:
+            continue
+        except Exception as e:
+            print(f"传输线程错误: {e}")
             time.sleep(0.01)
 
 
@@ -249,18 +301,27 @@ def handle_connect():
     user_id = request.sid
     user_cmd[user_id] = default_cmd_str
     user_queues[user_id] = queue.Queue()
+    user_transfer_queues[user_id] = queue.Queue()  # 新增：传输队列
     join_room(user_id)
 
     stop_event = Event()
+    
+    # 推理线程：运行模型，生成GPU tensor
     inference_thread = Thread(target=model_inference, args=(user_id, stop_event))
     inference_thread.daemon = True
     inference_thread.start()
 
+    # 传输线程：异步执行GPU->CPU转换
+    transfer_thread = Thread(target=transfer_gpu_to_cpu, args=(user_id, stop_event))
+    transfer_thread.daemon = True
+    transfer_thread.start()
+
+    # 发送线程：将结果发送到前端
     result_thread = Thread(target=send_results, args=(user_id, stop_event))
     result_thread.daemon = True
     result_thread.start()
 
-    user_threads[user_id] = (inference_thread, result_thread, stop_event)
+    user_threads[user_id] = (inference_thread, transfer_thread, result_thread, stop_event)
     socketio.emit('update_person', {'num': len(online_player)})
 
 
@@ -270,12 +331,14 @@ def handle_disconnect():
     leave_room(user_id)
     user_cmd.pop(user_id, None)
     user_queues.pop(user_id, None)
+    user_transfer_queues.pop(user_id, None)  # 清理传输队列
     user_config.pop(user_id, None)
     online_player.pop(user_id, None)
     if user_id in user_threads:
-        inference_thread, result_thread, stop_event = user_threads.pop(user_id)
+        inference_thread, transfer_thread, result_thread, stop_event = user_threads.pop(user_id)
         stop_event.set()
         inference_thread.join()
+        transfer_thread.join()
         result_thread.join()
 
 
