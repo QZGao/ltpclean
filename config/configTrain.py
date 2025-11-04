@@ -3,7 +3,7 @@ model_name = 'df_z32_c1_dit_n11_mario_km_tanh_ldm'
 train_sample = 0
 out_dir: str = "./output"
 # data_path: str = "/content/drive/MyDrive/mario_data/"
-data_path = "./datatrain/"
+data_path = "./mariodata/"
 ckpt_path: str = "./ckpt"
 model_path = "model_epoch115_20251029_04.pth" # infer或者load pretrain权重时候用
 device = 'cuda:0'
@@ -23,7 +23,7 @@ data_type='java'
 img_size = 256
 img_channel = 3
 base_ch: int = 64          # 减少基础通道数以适应GPU内存
-num_workers_folders=8
+num_workers_folders=32
 num_workers = 32
 gradient_accumulation_steps: int = 1  # 梯度累积步数，用于模拟更大的batch size
 

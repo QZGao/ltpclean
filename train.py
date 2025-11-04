@@ -360,11 +360,11 @@ def train():
             ]
             batch_data[0] = vae_encode(batch_data[0], vae, device_obj)
 
-            # Repeat batch 14 times to increase data volume
-            # repeat(14, 1, 1, ...) means repeat 14 times on first dimension (batch dimension), other dimensions unchanged
-            batch_data[0] = batch_data[0].repeat(14, 1, 1, 1, 1)  # images: [batch, frames, C, H, W]
-            batch_data[1] = batch_data[1].repeat(14, 1, 1)  # actions: [batch, frames, 1]
-            batch_data[2] = batch_data[2].repeat(14, 1)  # nonterminals: [batch, frames]
+            # # Repeat batch 14 times to increase data volume
+            # # over fit small dataset
+            # batch_data[0] = batch_data[0].repeat(14, 1, 1, 1, 1)  # images: [batch, frames, C, H, W]
+            # batch_data[1] = batch_data[1].repeat(14, 1, 1)  # actions: [batch, frames, 1]
+            # batch_data[2] = batch_data[2].repeat(14, 1)  # nonterminals: [batch, frames]
 
             try:
                 out_dict = model.df_model.training_step(batch_data)
