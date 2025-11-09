@@ -23,8 +23,8 @@ data_type='java'
 img_size = 256
 img_channel = 3
 base_ch: int = 64          # 减少基础通道数以适应GPU内存
-num_workers_folders=32
-num_workers = 32
+num_workers_folders=12
+num_workers = 12
 gradient_accumulation_steps: int = 1  # 梯度累积步数，用于模拟更大的batch size
 
 
