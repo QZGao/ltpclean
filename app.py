@@ -1,4 +1,4 @@
-from flask import Flask, render_template
+from flask import Flask, render_template, request
 from flask_socketio import SocketIO, emit, join_room, leave_room
 import base64
 import numpy as np
@@ -199,8 +199,7 @@ def model_inference(user_id, stop_event):
                 obs = vae.decode(obs / 0.1355)
                 decode_time = time.time() - decode_start
                 
-                # 在GPU上压缩图像从256x256到128x128（异步执行）
-                # obs_gpu = obs[0]
+                # 在GPU上压缩图像从256x256到128x128
                 resize_start = time.time()
                 obs_gpu = torch.nn.functional.interpolate(
                     obs,
@@ -210,12 +209,12 @@ def model_inference(user_id, stop_event):
                 ).squeeze(0)
                 
             user_zeta[user_id] = zeta
-            
+            resize_time = time.time() - resize_start
             # 计算推理耗时（不包括传输时间）
             inference_time = time.time() - start_time
             
             # 将GPU tensor放入传输队列，让传输线程异步处理
-            duration_prefix = f"{inference_time:.3f}s (step:{step_time:.3f} decode:{decode_time:.3f} inference:{inference_time:.3f}"
+            duration_prefix = f"{inference_time:.3f}s (step:{step_time:.3f} decode:{decode_time:.3f} resize:{resize_time:.3f}"
             user_transfer_queues[user_id].put((obs_gpu, key, duration_prefix))
             
             # 计算剩余时间（只考虑推理时间，传输在后台进行）

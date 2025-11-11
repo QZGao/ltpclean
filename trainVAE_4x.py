@@ -1,23 +1,16 @@
 from torchvision.transforms import InterpolationMode
 
-from models.vae.sdvae import SDVAE
+from models.vae.autoencoder import AutoencoderKL
 import torch
 import config.configVAE as cfg
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
 import os
 from datetime import datetime
-
-from dataloader.dataLoad import MarioDataset
+from torch.utils.data import DataLoader
+from dataloader.dataLoadvae import MarioDataset
 from train import setup_logging, save_loss_curve
 
-def build_img_batch_from_indices(dataset, indices):
-    """根据索引列表构建图片批次"""
-    batch_images = []
-    for idx in indices:
-        image, _, _ = dataset[idx]
-        batch_images.append(image)
-    return torch.stack(batch_images, dim=0)
 
 device: str = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -53,7 +46,7 @@ def save_model_with_optimizer(model, optimizer, epochs, final_loss, best_loss, l
 
 def infer_test(img):
     device_obj = torch.device(device)
-    model = SDVAE()
+    model = AutoencoderKL()
     
     # 只有当 model_path 不为空时才拼接路径
     if cfg.model_path:
@@ -70,16 +63,17 @@ def infer_test(img):
         print(f"⚠️ Checkpoint not found: {ckpt_path}, use initialized model")
     
     model = model.to(device_obj)
-    vae_test(img, model, device_obj, 'infer')
+    vae_test(img, model, device_obj, 9999)
 
 
 
 
 
-def vae_test(img_path, model, device_obj, e=None, out_dir='output/VAE' ):
+def vae_test(img_path, model, device_obj, e=99999, out_dir='output/VAE', logger=None ):
     """测试VAE模型的编码解码效果"""
     import os
     import glob
+    import time
     from PIL import Image
     import torchvision.transforms as transforms
     import torch.nn.functional as F
@@ -104,9 +98,14 @@ def vae_test(img_path, model, device_obj, e=None, out_dir='output/VAE' ):
     total_loss = 0
     num_images = 0
     
+    # 时间统计变量
+    total_encode_time = 0.0
+    total_decode_time = 0.0
+    total_process_time = 0.0
+    
     # 定义图像变换
     transform = transforms.Compose([
-        transforms.Resize((256, 256),interpolation=InterpolationMode.NEAREST),
+        transforms.Resize((128, 128),interpolation=InterpolationMode.NEAREST),
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
     ])
@@ -118,15 +117,31 @@ def vae_test(img_path, model, device_obj, e=None, out_dir='output/VAE' ):
                 img = Image.open(img_file).convert('RGB')
                 img_tensor = transform(img).unsqueeze(0).to(device_obj)
                 
-                # VAE编码解码
+                # 同步CUDA操作以确保准确计时
+                if device_obj.type == 'cuda':
+                    torch.cuda.synchronize()
+                
+                # 计时：VAE编码
+                encode_start = time.time()
                 encoded = model.encode(img_tensor)
                 latent = encoded.sample()
-                decoded = model.decode(latent)
+                if device_obj.type == 'cuda':
+                    torch.cuda.synchronize()
+                encode_end = time.time()
+                encode_time = encode_end - encode_start
+                total_encode_time += encode_time
                 
-                # 计算重建损失
-                loss = F.l1_loss(decoded, img_tensor)
-                total_loss += loss.item()
-                num_images += 1
+                # 计时：VAE解码
+                decode_start = time.time()
+                decoded = model.decode(latent)
+                if device_obj.type == 'cuda':
+                    torch.cuda.synchronize()
+                decode_end = time.time()
+                decode_time = decode_end - decode_start
+                total_decode_time += decode_time
+                
+                total_process_time += (encode_time + decode_time)
+                
                 
                 # 保存原始图像和重建图像
                 img_name = os.path.splitext(os.path.basename(img_file))[0]
@@ -139,57 +154,55 @@ def vae_test(img_path, model, device_obj, e=None, out_dir='output/VAE' ):
                 transforms.ToPILImage()(original_img).save(os.path.join(output_dir, f"{img_name}_original.png"))
                 transforms.ToPILImage()(reconstructed_img).save(os.path.join(output_dir, f"{img_name}_reconstructed.png"))
                 
+                num_images += 1
+                
             except Exception as ex:
                 print(f"❌ Error processing {img_file}: {ex}")
                 continue
     
+    # 计算平均时间
     if num_images > 0:
-        avg_loss = total_loss / num_images
-        print(f"✅ VAE test completed. Average reconstruction loss: {avg_loss:.6f}")
-        print(f"📁 Test images saved to: {output_dir}")
-    else:
-        print("❌ No images were successfully processed")
+        avg_encode_time = total_encode_time / num_images
+        avg_decode_time = total_decode_time / num_images
+        avg_total_time = total_process_time / num_images
+        
+        # 记录时间统计信息
+        time_message = f"⏱️  VAE Performance (Epoch {e+1}): Avg Encode: {avg_encode_time*1000:.2f}ms, " \
+                      f"Avg Decode: {avg_decode_time*1000:.2f}ms, Avg Total: {avg_total_time*1000:.2f}ms " \
+                      f"(processed {num_images} images)"
+        if logger is not None:
+            logger.info(time_message)
     
     model.train()  # 恢复训练模式
 
 
 def train():
     logger, log_path = setup_logging()
-
     device_obj = torch.device(device)
-    # 使用多进程数据加载优化
-    dataset = MarioDataset(cfg.data_path, cfg.img_size, num_workers=8)
-    model = SDVAE().to(device_obj)
-    
-    # 使用全部数据进行训练
-    total_samples = len(dataset)
-    train_size = total_samples
-    
-    print(f"📊 Using all {train_size} samples for training")
+    model = AutoencoderKL().to(device_obj)
 
     epochs = cfg.epochs
     loss_log_iter = cfg.loss_log_iter
     img_save_epoch = cfg.img_save_epoch
     batch_size = cfg.batch_size
     ckpt_save_epoch = cfg.checkpoint_save_epoch
-
     opt = torch.optim.AdamW(model.parameters(), lr=cfg.lr, weight_decay=1e-5)
-    
+
+    dataset = MarioDataset(cfg)
+    dataloader = DataLoader(dataset, batch_size=batch_size,shuffle=True,num_workers=cfg.num_workers)
+
+    # 使用全部数据进行训练
+    total_samples = len(dataset)
+    print(f"📊 Using all {total_samples} samples for training")
+
     # 检查是否有预训练检查点
     start_epoch = 0
+    final_avg_loss = 0  # 用于保存最终的avg_loss
     best_loss = float('inf')
     loss_history = []
-    
-    # 查找最新的检查点
-    checkpoint_files = []
-    if os.path.exists(cfg.ckpt_path):
-        checkpoint_files = [f for f in os.listdir(cfg.ckpt_path) if f.endswith('.pth')]
-    
-    if checkpoint_files:
+    if cfg.resume_training:
         # 按文件名排序，获取最新的检查点
-        checkpoint_files.sort()
-        latest_checkpoint = os.path.join(cfg.ckpt_path, checkpoint_files[-1])
-        
+        latest_checkpoint = cfg.resume_checkpoint_path
         try:
             print(f"📥 Loading checkpoint: {latest_checkpoint}")
             checkpoint = torch.load(latest_checkpoint, map_location=device_obj, weights_only=False)
@@ -206,27 +219,17 @@ def train():
         except Exception as e:
             print(f"❌ Failed to load checkpoint: {e}")
             print("🔄 Starting training from scratch...")
-    
-    final_avg_loss = 0  # 用于保存最终的avg_loss
 
-
-
+    model.train()
     for e in range(start_epoch, epochs):
         total_loss = 0
         batch_count = 0
         
-        # 每个epoch开始时打乱数据索引
-        import random
-        indices = list(range(train_size))
-        random.shuffle(indices)
-        print(f"🔄 Epoch {e + 1}: Data shuffled, using {len(indices)} samples")
-        
-        for batch_idx in range(0, train_size, batch_size):
+        for batch_img in dataloader:
             # 使用打乱后的索引获取数据
-            batch_indices = indices[batch_idx:batch_idx + batch_size]
-            batch_img = build_img_batch_from_indices(dataset, batch_indices).to(device_obj)
             try:
                 # VAE前向传播
+                batch_img = batch_img.to(device_obj)
                 encoded = model.encode(batch_img)
                 latent = encoded.sample()
                 decode_img = model.decode(latent)
@@ -269,7 +272,7 @@ def train():
                 logger.info(best_message)
 
         if (e + 1) % img_save_epoch == 0:
-            vae_test(cfg.test_img_path,model,device_obj,e,cfg.out_dir)
+            vae_test(cfg.test_img_path,model,device_obj,e,cfg.out_dir,logger)
 
         if (e + 1) % ckpt_save_epoch == 0:
             current_loss = avg_loss if batch_count > 0 else 0
@@ -296,7 +299,7 @@ def train():
         print(f"    batches per epoch: {batch_count}")
         logger.info(stats_message)
 
-        vae_test(cfg.test_img_path,model,device_obj,9999,cfg.out_dir)
+        vae_test(cfg.test_img_path,model,device_obj,9999,cfg.out_dir,logger)
 
         if len(loss_history) > 0:
             final_loss_curve_path = save_loss_curve(loss_history, 1, save_path=cfg.out_dir)

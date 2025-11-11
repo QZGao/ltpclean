@@ -74,6 +74,6 @@ if __name__ == "__main__":
         image_path='eval_data/demo1.png',
         output_path='eval_data/0-frameArray1.txt',
         action_value=0,  # 可以根据需要修改动作值
-        resolution=256   # VAE 输入分辨率
+        resolution=126   # VAE 输入分辨率
     )
 

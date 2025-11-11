@@ -7,7 +7,7 @@ import config.configTrain as cfg
 
 
 # 导入数据加载模块
-from dataloader.dataLoad import MarioDataset, build_video_sequence_batch
+from dataloader.dataLoad import MarioDataset
 
 device: str = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -46,50 +46,6 @@ def train():
 
     # 按batch_size分组处理
     num_valid_videos = len(valid_starts)
-
-    # for epoch in range(epochs):
-    #
-    #
-    #     # 按batch处理 - 优化版本
-    #     for batch_start in range(0, num_valid_videos, batch_size):
-    #         batch_end = min(batch_start + batch_size, num_valid_videos)
-    #         current_batch_size = batch_end - batch_start
-    #
-    #         # 获取当前batch的起始索引
-    #         current_start_indices = valid_starts[batch_start:batch_end]
-    #
-    #
-    #         # 批量构建视频序列
-    #         batch_images, batch_actions, batch_nonterminals = build_video_sequence_batch(
-    #             dataset, current_start_indices, num_frames
-    #         )
-    #
-    #         # 如果batch不满，用最后一个视频复制补齐
-    #         if current_batch_size < batch_size:
-    #             last_video_images = batch_images[-1]
-    #             last_video_actions = batch_actions[-1]
-    #             last_video_nonterminals = batch_nonterminals[-1]
-    #
-    #             for _ in range(batch_size - current_batch_size):
-    #                 batch_images.append(last_video_images)
-    #                 batch_actions.append(last_video_actions)
-    #                 batch_nonterminals.append(last_video_nonterminals)
-    #
-    #         # 拼接成batch_tensor
-    #         batch_data = [
-    #             torch.cat(batch_images, dim=0).to(device_obj),
-    #             torch.cat(batch_actions, dim=0).to(device_obj),
-    #             torch.cat(batch_nonterminals, dim=0).to(device_obj)
-    #         ]
-    #         print(batch_data[1],batch_data[2])
-
-
-            # # 扩展batch_size: [b, num_frames, channels, h, w] -> [b*16, num_frames, channels, h, w]
-            # batch_data[0] = batch_data[0].repeat(32, 1, 1, 1, 1)
-            # # 同步扩展actions和nonterminals
-            # batch_data[1] = batch_data[1].repeat(32, 1, 1)  # actions: [1, num_frames, 1] -> [16, num_frames, 1]
-            # batch_data[2] = batch_data[2].repeat(32, 1)  # nonterminals: [1, num_frames] -> [16, num_frames]
-
 
 
 

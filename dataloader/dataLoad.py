@@ -161,40 +161,6 @@ class MarioDataset(Dataset):
         return action_mapped, nonterminal
 
 
-    # @staticmethod
-    # def _map_action_to_playgenaction_static(action: int) -> int:
-    #     """静态方法版本的动作映射函数
-    #     映射规则：
-    #     - 0/45: 无动作或未识别
-    #     - 1: 右移 (r)
-    #     - 2: 向右跳 (rj)
-    #     - 3: 左移 (l)
-    #     - 4: 向左跳 (lj)
-    #     - 5: 原地跳 (j)
-    #     - 6: 加速或下蹲 (b 或 bd)
-    #     - 7: 加速向右下 (brd)
-    #     - 8: 加速向左下 (bld)
-    #     """
-    #     if action == 0: # 无动作
-    #         return 0
-    #     if action == 2:
-    #         return 1  #
-    #     elif action == 148:
-    #         return 2
-    #     elif action == 48:
-    #         return 3
-    #     elif action == 176:
-    #         return 4
-    #     elif action == 144:
-    #         return 5
-    #     elif action in (16, 18):
-    #         return 6
-    #     elif action == 22:
-    #         return 7
-    #     elif action == 50:
-    #         return 8
-    #     else:
-    #         return 45
 
     def __len__(self):
         """返回有效的视频序列数量（不是原始样本数量）"""
@@ -243,47 +209,4 @@ class MarioDataset(Dataset):
         return images_tensor, actions_tensor, nonterminals_tensor
 
 
-def build_video_sequence_batch(dataset, start_indices, num_frames):
-    """批量构建视频序列，优化大数据集处理"""
-    batch_images = []
-    batch_actions = []
-    batch_nonterminals = []
-    
-    # 批量获取数据
-    for start_idx in start_indices:
-        end_idx = start_idx + num_frames
-        
-        # 构建单个视频序列
-        video_images = []
-        video_actions = []
-        video_nonterminals = []
-        
-        for frame_idx in range(start_idx, end_idx):
 
-            image, action, nonterminal = dataset[frame_idx]
-            video_images.append(image)
-            video_actions.append(action)
-            video_nonterminals.append(nonterminal)
-        
-        # 转换为tensor
-        images_tensor = torch.stack(video_images, dim=0).unsqueeze(0)  # [b, num_frames, 3, 128, 128]
-        actions_tensor = torch.tensor(video_actions, dtype=torch.long).unsqueeze(0).unsqueeze(-1)  # [b, num_frames, 1]
-        nonterminals_tensor = torch.tensor(video_nonterminals, dtype=torch.bool).unsqueeze(0)  # [b, num_frames]
-        
-        batch_images.append(images_tensor)
-        batch_actions.append(actions_tensor)
-        batch_nonterminals.append(nonterminals_tensor)
-    
-    return batch_images, batch_actions, batch_nonterminals
-
-
-def build_img_batch(dataset, start_indices,batch_size):
-    """批量构建图片训练VAE"""
-    batch_images = []
-    # 批量获取数据
-    for idx in range(batch_size):
-        image, _, _= dataset[start_indices+idx]
-        batch_images.append(image)
-    # 转换为tensor
-    images_tensor = torch.stack(batch_images, dim=0)  # [b, 3, 256, 256]
-    return images_tensor
