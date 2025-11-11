@@ -12,7 +12,7 @@ from torchvision.transforms import InterpolationMode
 from algorithm import Algorithm
 from config.configTrain import *
 from models.vae.sdvae import SDVAE
-
+from models.vae.autoencoder import AutoencoderKL
 def remove_orig_mod_prefix(state_dict):
     """移除 torch.compile 导致的 _orig_mod. 前缀"""
     if any(key.startswith('_orig_mod.') for key in state_dict.keys()):
@@ -69,6 +69,7 @@ def init_simulator(model,vae, batch):
 
     latent = latent_dist.sample()
     decoded_obs = vae.decode(latent)
+    decoded_obs = torch.clamp(decoded_obs, -1, 1)  # 确保输出在 [-1, 1] 范围
 
     latent_for_df = latent * 0.1355
     latent_for_df = latent_for_df.reshape(4, 32, 32)
@@ -116,7 +117,8 @@ def model_test(img_path='eval_data/demo2.png', actions=['r'], model=None,vae=Non
         action_count = 0
         
         # 检查是否为CUDA设备
-        is_cuda = device.startswith('cuda') and torch.cuda.is_available()
+        device_obj = torch.device(device) if isinstance(device, str) else device
+        is_cuda = device_obj.type == 'cuda' and torch.cuda.is_available()
         
         for a in actions:
             with torch.no_grad():
@@ -138,6 +140,7 @@ def model_test(img_path='eval_data/demo2.png', actions=['r'], model=None,vae=Non
                     torch.cuda.synchronize()
                 decode_start = time.time()
                 obs = vae.decode(obs / 0.1355)
+                obs = torch.clamp(obs, -1, 1)  # 确保输出在 [-1, 1] 范围
                 if is_cuda:
                     torch.cuda.synchronize()
                 decode_end = time.time()
@@ -202,7 +205,7 @@ if __name__ =="__main__":
     args = arg()
     sample_step = args.sample_step
     model = Algorithm(model_name,device)
-    vae = SDVAE().to(device)
+    vae = AutoencoderKL().to(device)
     custom_vae_path = vae_model
     if custom_vae_path and os.path.exists(custom_vae_path):
         print(f"📥 load your own vae ckpt: {custom_vae_path}")

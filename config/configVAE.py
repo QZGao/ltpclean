@@ -23,13 +23,13 @@ num_workers = 12
 
 loss_log_iter: int = 10  # loss数据print和保存至log日志的间隔 \log
 
-img_save_epoch: int = 2  # avgloss和gif保存间隔 \output
+img_save_epoch: int = 1  # avgloss和gif保存间隔 \output
 
-checkpoint_save_epoch: int = 2  # checkpoint保存间隔
+checkpoint_save_epoch: int = 1  # checkpoint保存间隔
 
 
 batch_size: int = 74
-epochs: int = 14          # 测试epoch数量
+epochs: int = 10          # 测试epoch数量
 
 
 test_img_path: str = "./eval_data/vae"

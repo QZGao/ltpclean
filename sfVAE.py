@@ -106,7 +106,7 @@ def vae_test(img_path, model, device_obj, e=None, out_dir='output/VAE' ):
     
     # 定义图像变换
     transform = transforms.Compose([
-        transforms.Resize((256, 256),interpolation=InterpolationMode.NEAREST),
+        transforms.Resize((128, 128),interpolation=InterpolationMode.NEAREST),
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
     ])
@@ -158,7 +158,7 @@ def estimate_scaling_factor():
 
     device_obj = torch.device(device)
     # 使用多进程数据加载优化
-    dataset = MarioDataset(cfg.data_path, cfg.img_size, num_workers=8)
+    dataset = MarioDataset(cfg)
     model = SDVAE().to(device_obj)
     
     # 加载训练好的模型

@@ -363,9 +363,9 @@ def train():
 
             # Repeat batch 14 times to increase data volume
             # over fit small dataset
-            batch_data[0] = batch_data[0].repeat(14, 1, 1, 1, 1)  # images: [batch, frames, C, H, W]
-            batch_data[1] = batch_data[1].repeat(14, 1, 1)  # actions: [batch, frames, 1]
-            batch_data[2] = batch_data[2].repeat(14, 1)  # nonterminals: [batch, frames]
+            batch_data[0] = batch_data[0].repeat(62, 1, 1, 1, 1)  # images: [batch, frames, C, H, W]
+            batch_data[1] = batch_data[1].repeat(62, 1, 1)  # actions: [batch, frames, 1]
+            batch_data[2] = batch_data[2].repeat(62, 1)  # nonterminals: [batch, frames]
 
             try:
                 out_dict = model.df_model.training_step(batch_data)

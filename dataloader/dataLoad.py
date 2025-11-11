@@ -35,7 +35,7 @@ class MarioDataset(Dataset):
             transforms.Resize((image_size, image_size),interpolation=InterpolationMode.NEAREST),
             # transforms.Resize((image_size, image_size)),
             transforms.ToTensor(), # [0, 1]
-            transforms.Normalize(0.5, 0.5),  # [-1, 1]
+            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),  # [-1, 1]
         ])
         
         # 预计算有效的视频序列起始位置（间隔 frame_interval）
