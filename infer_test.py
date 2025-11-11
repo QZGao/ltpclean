@@ -1,5 +1,6 @@
 import argparse
 import os
+import time
 from PIL import Image
 import cv2
 import torch
@@ -11,6 +12,13 @@ from torchvision.transforms import InterpolationMode
 from algorithm import Algorithm
 from config.configTrain import *
 from models.vae.sdvae import SDVAE
+
+def remove_orig_mod_prefix(state_dict):
+    """移除 torch.compile 导致的 _orig_mod. 前缀"""
+    if any(key.startswith('_orig_mod.') for key in state_dict.keys()):
+        return {key[len('_orig_mod.'):] if key.startswith('_orig_mod.') else key: value 
+                for key, value in state_dict.items()}
+    return state_dict
 def get_jave_7action(key):
     if key == "r":
         action = 2
@@ -46,7 +54,7 @@ def image_to_numpy_array(filepath):
 def get_img_data(img_path):
     img = Image.open(img_path).convert('RGB')
     transform = transforms.Compose([
-        transforms.Resize((256, 256),interpolation=InterpolationMode.NEAREST),
+        transforms.Resize((img_size, img_size),interpolation=InterpolationMode.NEAREST),
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),  # [-1, 1]
     ])
@@ -101,12 +109,55 @@ def model_test(img_path='eval_data/demo2.png', actions=['r'], model=None,vae=Non
             zeta,obs_start = init_simulator(model,vae,batch_data) #(1,32,32,32)
         img_list.append(get_web_img(obs_start[0].cpu().numpy()))
         actions=get_action_sequence(actions)
+        
+        # 时间统计变量
+        total_diffusion_time = 0.0
+        total_vae_decode_time = 0.0
+        action_count = 0
+        
+        # 检查是否为CUDA设备
+        is_cuda = device.startswith('cuda') and torch.cuda.is_available()
+        
         for a in actions:
             with torch.no_grad():
                 a = torch.tensor([a],device=device).long()
+                
+                # 计时：Diffusion step
+                if is_cuda:
+                    torch.cuda.synchronize()
+                diffusion_start = time.time()
                 zeta, obs = model.df_model.step(zeta, a.float(), sample_step)
+                if is_cuda:
+                    torch.cuda.synchronize()
+                diffusion_end = time.time()
+                diffusion_time = diffusion_end - diffusion_start
+                total_diffusion_time += diffusion_time
+                
+                # 计时：VAE decode
+                if is_cuda:
+                    torch.cuda.synchronize()
+                decode_start = time.time()
                 obs = vae.decode(obs / 0.1355)
+                if is_cuda:
+                    torch.cuda.synchronize()
+                decode_end = time.time()
+                decode_time = decode_end - decode_start
+                total_vae_decode_time += decode_time
+                
+                action_count += 1
+                
             img_list.append(get_web_img(obs[0].cpu().numpy()))
+        
+        # 计算并打印平均时间
+        if action_count > 0:
+            avg_diffusion_time = total_diffusion_time / action_count
+            avg_vae_decode_time = total_vae_decode_time / action_count
+            avg_total_time = avg_diffusion_time + avg_vae_decode_time
+            
+            print(f"⏱️  Inference Performance: Avg Diffusion Step: {avg_diffusion_time*1000:.2f}ms, "
+                  f"Avg VAE Decode: {avg_vae_decode_time*1000:.2f}ms, "
+                  f"Avg Total: {avg_total_time*1000:.2f}ms "
+                  f"(processed {action_count} actions)")
             
         if not os.path.isdir(output_dir):
             os.makedirs(output_dir)
@@ -155,14 +206,16 @@ if __name__ =="__main__":
     custom_vae_path = vae_model
     if custom_vae_path and os.path.exists(custom_vae_path):
         print(f"📥 load your own vae ckpt: {custom_vae_path}")
-        vae_state_dict = torch.load(custom_vae_path, map_location=device)
-        vae.load_state_dict(vae_state_dict['network_state_dict'], strict=False)
+        vae_state_dict = torch.load(custom_vae_path, map_location=device, weights_only=False)
+        vae_state_dict = remove_orig_mod_prefix(vae_state_dict['network_state_dict'])
+        vae.load_state_dict(vae_state_dict, strict=False)
         print("✅ your vae ckpt loaded successfully！")
     else:
         print("ℹ️ use default pre-trained vae ckpt")
 
     state_dict = torch.load(os.path.join("ckpt",model_path),map_location=device,weights_only=False)
-    model.load_state_dict(state_dict["network_state_dict"],strict=False)
+    state_dict = remove_orig_mod_prefix(state_dict["network_state_dict"])
+    model.load_state_dict(state_dict,strict=False)
     model.eval().to(device)
 
     model_test(args.img,args.actions,model,vae,device,sample_step,f'{args.img[-9:-4]}_test',epoch=None,output_dir='output')

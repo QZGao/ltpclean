@@ -32,7 +32,7 @@ import config.configTrain as cfg
 import matplotlib.pyplot as plt
 import os
 from datetime import datetime
-from infer_test import model_test
+from infer_test import model_test,remove_orig_mod_prefix
 import logging
 # Import data loading module
 from dataloader.dataLoad import MarioDataset
@@ -131,7 +131,7 @@ def save_model(model, optimizer, epochs, final_loss, path=cfg.ckpt_path):
         print(f"❌ Save model failed: {e}")
 
 
-def load_model(model, optimizer, checkpoint_path, device_obj):
+def load_resume_model(model, optimizer, checkpoint_path, device_obj):
     """Load model weights and optimizer state"""
     if not os.path.exists(checkpoint_path):
         print(f"⚠️ Checkpoint not found: {checkpoint_path}")
@@ -140,9 +140,9 @@ def load_model(model, optimizer, checkpoint_path, device_obj):
     try:
         print(f"📥 Loading checkpoint: {checkpoint_path}")
         checkpoint = torch.load(checkpoint_path, map_location=device_obj, weights_only=False)
-
+        ckpt = remove_orig_mod_prefix(checkpoint['network_state_dict'])
         # Load model weights
-        model.load_state_dict(checkpoint['network_state_dict'], strict=False)
+        model.load_state_dict(ckpt, strict=False)
         print("✅ Model weights loaded successfully!")
 
         # Load optimizer state
@@ -166,6 +166,21 @@ def load_model(model, optimizer, checkpoint_path, device_obj):
     except Exception as e:
         print(f"❌ Failed to load checkpoint: {e}")
         return 0, float('inf')
+
+
+def load_pretrained_model(model, device_obj):
+    """Load pretrained model weights (without optimizer state)"""
+    checkpoint_path = os.path.join(cfg.ckpt_path, cfg.model_path)
+    if os.path.exists(checkpoint_path):
+        print(f"📥 Loading diffusion forcing pretrained checkpoint: {checkpoint_path}")
+        state_dict = torch.load(checkpoint_path, map_location=device_obj, weights_only=False)
+        ckpt = remove_orig_mod_prefix(state_dict["network_state_dict"])
+        model.load_state_dict(ckpt, strict=False)
+        print("✅ Diffusion forcing pretrained checkpoint loaded successfully!")
+        return True
+    else:
+        print(f"⚠️ Diffusion forcing pretrained checkpoint not found: {checkpoint_path}, using random initialized model")
+        return False
 
 
 def vae_encode(batch_data_images, vae_model, device, scale_factor=0.1355):
@@ -243,31 +258,15 @@ def train():
     # Check if need to resume training - prioritize loading resume checkpoint
     if cfg.resume_training and cfg.resume_checkpoint_path:
         print(f"🔄 Resuming training from checkpoint: {cfg.resume_checkpoint_path}")
-        start_epoch, best_loss = load_model(model, opt, cfg.resume_checkpoint_path, device_obj)
+        start_epoch, best_loss = load_resume_model(model, opt, cfg.resume_checkpoint_path, device_obj)
         if start_epoch > 0:
             print(f"✅ Resuming training from epoch {start_epoch}")
         else:
             print("⚠️ Failed to load resume checkpoint, falling back to pretrained model")
-            # If resume training loading fails, fallback to pretrained model
-            checkpoint_path = os.path.join(cfg.ckpt_path, cfg.model_path)
-            if os.path.exists(checkpoint_path):
-                print(f"📥 Loading diffusion forcing pretrained checkpoint: {checkpoint_path}")
-                state_dict = torch.load(checkpoint_path, map_location=device_obj, weights_only=False)
-                model.load_state_dict(state_dict['network_state_dict'], strict=False)
-                print("✅ Diffusion forcing pretrained checkpoint loaded successfully!")
-            else:
-                print(f"⚠️ Diffusion forcing pretrained checkpoint not found: {checkpoint_path}, using random initialized model")
+            load_pretrained_model(model, device_obj)
     else:
         # No resume training set, load pretrained model
-        checkpoint_path = os.path.join(cfg.ckpt_path, cfg.model_path)
-        if os.path.exists(checkpoint_path):
-            print(f"📥 Loading diffusion forcing pretrained checkpoint: {checkpoint_path}")
-            state_dict = torch.load(checkpoint_path, map_location=device_obj, weights_only=False)
-            model.load_state_dict(state_dict['network_state_dict'], strict=False)
-            print("✅ Diffusion forcing pretrained checkpoint loaded successfully!")
-        else:
-            print(
-                f"⚠️ Diffusion forcing pretrained checkpoint not found: {checkpoint_path}, using random initialized model")
+        load_pretrained_model(model, device_obj)
         print("🆕 Starting fresh training")
 
     # Get VAE and Diffusion models
@@ -277,8 +276,9 @@ def train():
     custom_vae_path = cfg.vae_model
     if custom_vae_path and os.path.exists(custom_vae_path):
         print(f"📥 Loading your own VAE checkpoint: {custom_vae_path}")
-        custom_state_dict = torch.load(custom_vae_path, map_location=device_obj)
-        vae.load_state_dict(custom_state_dict['network_state_dict'], strict=False)
+        custom_state_dict = torch.load(custom_vae_path, map_location=device_obj,weights_only=False)
+        vae_ckpt = remove_orig_mod_prefix(custom_state_dict["network_state_dict"])
+        vae.load_state_dict(vae_ckpt, strict=False)
         print("✅ Your VAE checkpoint loaded successfully!")
     else:
         print("ℹ️ Using default pre-trained VAE checkpoint")
@@ -360,11 +360,11 @@ def train():
             ]
             batch_data[0] = vae_encode(batch_data[0], vae, device_obj)
 
-            # # Repeat batch 14 times to increase data volume
-            # # over fit small dataset
-            # batch_data[0] = batch_data[0].repeat(14, 1, 1, 1, 1)  # images: [batch, frames, C, H, W]
-            # batch_data[1] = batch_data[1].repeat(14, 1, 1)  # actions: [batch, frames, 1]
-            # batch_data[2] = batch_data[2].repeat(14, 1)  # nonterminals: [batch, frames]
+            # Repeat batch 14 times to increase data volume
+            # over fit small dataset
+            batch_data[0] = batch_data[0].repeat(14, 1, 1, 1, 1)  # images: [batch, frames, C, H, W]
+            batch_data[1] = batch_data[1].repeat(14, 1, 1)  # actions: [batch, frames, 1]
+            batch_data[2] = batch_data[2].repeat(14, 1)  # nonterminals: [batch, frames]
 
             try:
                 out_dict = model.df_model.training_step(batch_data)
@@ -409,9 +409,12 @@ def train():
                 f"Epoch {epoch + 1} ended with {accumulation_step % gradient_accumulation_steps} accumulated gradients, applying remaining update...")
             opt.step()
             opt.zero_grad()
+        
+        # smalldataset
+        if batch_count > 0 and (epoch + 1) % 5 == 0:
 
-        # Every epochs
-        if batch_count > 0 and (epoch + 1) % 1 == 0:
+        # # large dataset
+        # if batch_count > 0 and (epoch + 1) % 1 == 0:
             # if batch_count > 0:
             avg_loss = total_loss / batch_count
             # scheduler.step(avg_loss)
@@ -432,28 +435,28 @@ def train():
         # Every gif_save_epoch epochs, run test once, save gif
         if (epoch + 1) % gif_save_epoch == 0:
             # small dataset
-            # model_test(cfg.test_img_path1, cfg.actions1, model, vae, device_obj, cfg.sample_step,
-            #            f'{cfg.test_img_path1[-9:-4]}_epoch{epoch + 1}_r', epoch=epoch + 1, output_dir=cfg.out_dir)
+            model_test(cfg.test_img_path1, cfg.actions1, model, vae, device_obj, cfg.sample_step,
+                       f'{cfg.test_img_path1[-9:-4]}_epoch{epoch + 1}_r', epoch=epoch + 1, output_dir=cfg.out_dir)
             # model_test(cfg.test_img_path2, cfg.actions3, model, vae, device_obj, cfg.sample_step,
             #            f'{cfg.test_img_path2[-9:-4]}_epoch{epoch + 1}_rj', epoch=epoch + 1, output_dir=cfg.out_dir)
 
-            # large data
-            model_test(cfg.test_img_path1, cfg.actions1, model, vae, device_obj, cfg.sample_step,
-                       f'{cfg.test_img_path1[-9:-4]}_epoch{epoch + 1}_r', epoch=epoch + 1, output_dir=cfg.out_dir)
-            model_test(cfg.test_img_path1, cfg.actions2, model, vae, device_obj, cfg.sample_step,
-                       f'{cfg.test_img_path1[-9:-4]}_epoch{epoch + 1}_rj', epoch=epoch + 1, output_dir=cfg.out_dir)
-            model_test(cfg.test_img_path2, cfg.actions1, model, vae, device_obj, cfg.sample_step,
-                       f'{cfg.test_img_path2[-9:-4]}_epoch{epoch + 1}_r', epoch=epoch + 1, output_dir=cfg.out_dir)
-            model_test(cfg.test_img_path2, cfg.actions2, model, vae, device_obj, cfg.sample_step,
-                       f'{cfg.test_img_path2[-9:-4]}_epoch{epoch + 1}_rj', epoch=epoch + 1, output_dir=cfg.out_dir)
-            model_test(cfg.test_img_path3, cfg.actions1, model, vae, device_obj, cfg.sample_step,
-                       f'{cfg.test_img_path3[-9:-4]}_epoch{epoch + 1}_r', epoch=epoch + 1, output_dir=cfg.out_dir)
-            model_test(cfg.test_img_path3, cfg.actions2, model, vae, device_obj, cfg.sample_step,
-                       f'{cfg.test_img_path3[-9:-4]}_epoch{epoch + 1}_rj', epoch=epoch + 1, output_dir=cfg.out_dir)
-            model_test(cfg.test_img_path4, cfg.actions1, model, vae, device_obj, cfg.sample_step,
-                       f'{cfg.test_img_path4[-9:-4]}_epoch{epoch + 1}_r', epoch=epoch + 1, output_dir=cfg.out_dir)
-            model_test(cfg.test_img_path4, cfg.actions2, model, vae, device_obj, cfg.sample_step,
-                       f'{cfg.test_img_path4[-9:-4]}_epoch{epoch + 1}_rj', epoch=epoch + 1, output_dir=cfg.out_dir)
+            # # large data
+            # model_test(cfg.test_img_path1, cfg.actions1, model, vae, device_obj, cfg.sample_step,
+            #            f'{cfg.test_img_path1[-9:-4]}_epoch{epoch + 1}_r', epoch=epoch + 1, output_dir=cfg.out_dir)
+            # model_test(cfg.test_img_path1, cfg.actions2, model, vae, device_obj, cfg.sample_step,
+            #            f'{cfg.test_img_path1[-9:-4]}_epoch{epoch + 1}_rj', epoch=epoch + 1, output_dir=cfg.out_dir)
+            # model_test(cfg.test_img_path2, cfg.actions1, model, vae, device_obj, cfg.sample_step,
+            #            f'{cfg.test_img_path2[-9:-4]}_epoch{epoch + 1}_r', epoch=epoch + 1, output_dir=cfg.out_dir)
+            # model_test(cfg.test_img_path2, cfg.actions2, model, vae, device_obj, cfg.sample_step,
+            #            f'{cfg.test_img_path2[-9:-4]}_epoch{epoch + 1}_rj', epoch=epoch + 1, output_dir=cfg.out_dir)
+            # model_test(cfg.test_img_path3, cfg.actions1, model, vae, device_obj, cfg.sample_step,
+            #            f'{cfg.test_img_path3[-9:-4]}_epoch{epoch + 1}_r', epoch=epoch + 1, output_dir=cfg.out_dir)
+            # model_test(cfg.test_img_path3, cfg.actions2, model, vae, device_obj, cfg.sample_step,
+            #            f'{cfg.test_img_path3[-9:-4]}_epoch{epoch + 1}_rj', epoch=epoch + 1, output_dir=cfg.out_dir)
+            # model_test(cfg.test_img_path4, cfg.actions1, model, vae, device_obj, cfg.sample_step,
+            #            f'{cfg.test_img_path4[-9:-4]}_epoch{epoch + 1}_r', epoch=epoch + 1, output_dir=cfg.out_dir)
+            # model_test(cfg.test_img_path4, cfg.actions2, model, vae, device_obj, cfg.sample_step,
+            #            f'{cfg.test_img_path4[-9:-4]}_epoch{epoch + 1}_rj', epoch=epoch + 1, output_dir=cfg.out_dir)
 
         # Every checkpoint_save_epoch epochs, save checkpoint once
         if (epoch + 1) % checkpoint_save_epoch == 0:
@@ -482,29 +485,29 @@ def train():
         print(f"    Final loss: {final_avg_loss:.6f}")
         print(f"    Total batches: {batch_count * epochs}")
         logger.info(stats_message)
-        ## small dataset
-        # model_test(cfg.test_img_path1, cfg.actions1, model, vae, device_obj, cfg.sample_step,
-        #            f'{cfg.test_img_path1[-9:-4]}_epoch{epoch + 1}_r', epoch='result', output_dir=cfg.out_dir)
+        # small dataset
+        model_test(cfg.test_img_path1, cfg.actions1, model, vae, device_obj, cfg.sample_step,
+                   f'{cfg.test_img_path1[-9:-4]}_epoch{epoch + 1}_r', epoch='result', output_dir=cfg.out_dir)
         # model_test(cfg.test_img_path3, cfg.actions3, model, vae, device_obj, cfg.sample_step,
         #            f'{cfg.test_img_path3[-9:-4]}_epoch{epoch + 1}_rj', epoch='result', output_dir=cfg.out_dir)
 
-        # large dataset
-        model_test(cfg.test_img_path1, cfg.actions1, model, vae, device_obj, cfg.sample_step,
-                   f'{cfg.test_img_path1[-9:-4]}_result_{epochs}_r', epoch='result', output_dir=cfg.out_dir)
-        model_test(cfg.test_img_path1, cfg.actions2, model, vae, device_obj, cfg.sample_step,
-                   f'{cfg.test_img_path1[-9:-4]}_result_{epochs}_rj', epoch='result', output_dir=cfg.out_dir)
-        model_test(cfg.test_img_path2, cfg.actions1, model, vae, device_obj, cfg.sample_step,
-                   f'{cfg.test_img_path2[-9:-4]}_result_{epochs}_r', epoch='result', output_dir=cfg.out_dir)
-        model_test(cfg.test_img_path2, cfg.actions2, model, vae, device_obj, cfg.sample_step,
-                   f'{cfg.test_img_path2[-9:-4]}_result_{epochs}_rj', epoch='result', output_dir=cfg.out_dir)
-        model_test(cfg.test_img_path3, cfg.actions1, model, vae, device_obj, cfg.sample_step,
-                   f'{cfg.test_img_path3[-9:-4]}_epoch{epoch + 1}_r', epoch='result', output_dir=cfg.out_dir)
-        model_test(cfg.test_img_path3, cfg.actions2, model, vae, device_obj, cfg.sample_step,
-                   f'{cfg.test_img_path3[-9:-4]}_epoch{epoch + 1}_rj', epoch='result', output_dir=cfg.out_dir)
-        model_test(cfg.test_img_path4, cfg.actions1, model, vae, device_obj, cfg.sample_step,
-                   f'{cfg.test_img_path4[-9:-4]}_epoch{epoch + 1}_r', epoch=epoch + 1, output_dir=cfg.out_dir)
-        model_test(cfg.test_img_path4, cfg.actions2, model, vae, device_obj, cfg.sample_step,
-                   f'{cfg.test_img_path4[-9:-4]}_epoch{epoch + 1}_rj', epoch=epoch + 1, output_dir=cfg.out_dir)
+        # # large dataset
+        # model_test(cfg.test_img_path1, cfg.actions1, model, vae, device_obj, cfg.sample_step,
+        #            f'{cfg.test_img_path1[-9:-4]}_result_{epochs}_r', epoch='result', output_dir=cfg.out_dir)
+        # model_test(cfg.test_img_path1, cfg.actions2, model, vae, device_obj, cfg.sample_step,
+        #            f'{cfg.test_img_path1[-9:-4]}_result_{epochs}_rj', epoch='result', output_dir=cfg.out_dir)
+        # model_test(cfg.test_img_path2, cfg.actions1, model, vae, device_obj, cfg.sample_step,
+        #            f'{cfg.test_img_path2[-9:-4]}_result_{epochs}_r', epoch='result', output_dir=cfg.out_dir)
+        # model_test(cfg.test_img_path2, cfg.actions2, model, vae, device_obj, cfg.sample_step,
+        #            f'{cfg.test_img_path2[-9:-4]}_result_{epochs}_rj', epoch='result', output_dir=cfg.out_dir)
+        # model_test(cfg.test_img_path3, cfg.actions1, model, vae, device_obj, cfg.sample_step,
+        #            f'{cfg.test_img_path3[-9:-4]}_epoch{epoch + 1}_r', epoch='result', output_dir=cfg.out_dir)
+        # model_test(cfg.test_img_path3, cfg.actions2, model, vae, device_obj, cfg.sample_step,
+        #            f'{cfg.test_img_path3[-9:-4]}_epoch{epoch + 1}_rj', epoch='result', output_dir=cfg.out_dir)
+        # model_test(cfg.test_img_path4, cfg.actions1, model, vae, device_obj, cfg.sample_step,
+        #            f'{cfg.test_img_path4[-9:-4]}_epoch{epoch + 1}_r', epoch=epoch + 1, output_dir=cfg.out_dir)
+        # model_test(cfg.test_img_path4, cfg.actions2, model, vae, device_obj, cfg.sample_step,
+        #            f'{cfg.test_img_path4[-9:-4]}_epoch{epoch + 1}_rj', epoch=epoch + 1, output_dir=cfg.out_dir)
 
     # Save final loss curve to output directory
     if len(loss_history) > 0:

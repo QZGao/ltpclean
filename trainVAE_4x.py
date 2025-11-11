@@ -56,8 +56,24 @@ def infer_test(img):
     
     if os.path.exists(ckpt_path):
         print(f"📥 load pretrained checkpoint: {ckpt_path}")
-        state_dict = torch.load(ckpt_path, map_location=device_obj, weights_only=False)
-        model.load_state_dict(state_dict['network_state_dict'], strict=False)
+        checkpoint = torch.load(ckpt_path, map_location=device_obj, weights_only=False)
+        
+        # 处理 torch.compile 导致的 _orig_mod. 前缀问题
+        state_dict = checkpoint['network_state_dict']
+        # 检查是否有 _orig_mod. 前缀
+        if any(key.startswith('_orig_mod.') for key in state_dict.keys()):
+            print("🔧 Detected _orig_mod. prefix in checkpoint (from torch.compile), removing...")
+            # 创建新的 state_dict，去掉 _orig_mod. 前缀
+            new_state_dict = {}
+            for key, value in state_dict.items():
+                if key.startswith('_orig_mod.'):
+                    new_key = key[len('_orig_mod.'):]  # 去掉 _orig_mod. 前缀
+                    new_state_dict[new_key] = value
+                else:
+                    new_state_dict[key] = value
+            state_dict = new_state_dict
+        
+        model.load_state_dict(state_dict, strict=False)
         print("ckpt loaded successfully")
     else:
         print(f"⚠️ Checkpoint not found: {ckpt_path}, use initialized model")
@@ -207,7 +223,22 @@ def train():
             print(f"📥 Loading checkpoint: {latest_checkpoint}")
             checkpoint = torch.load(latest_checkpoint, map_location=device_obj, weights_only=False)
             
-            model.load_state_dict(checkpoint['network_state_dict'])
+            # 处理 torch.compile 导致的 _orig_mod. 前缀问题
+            state_dict = checkpoint['network_state_dict']
+            # 检查是否有 _orig_mod. 前缀
+            if any(key.startswith('_orig_mod.') for key in state_dict.keys()):
+                print("🔧 Detected _orig_mod. prefix in checkpoint (from torch.compile), removing...")
+                # 创建新的 state_dict，去掉 _orig_mod. 前缀
+                new_state_dict = {}
+                for key, value in state_dict.items():
+                    if key.startswith('_orig_mod.'):
+                        new_key = key[len('_orig_mod.'):]  # 去掉 _orig_mod. 前缀
+                        new_state_dict[new_key] = value
+                    else:
+                        new_state_dict[key] = value
+                state_dict = new_state_dict
+            
+            model.load_state_dict(state_dict, strict=False)
             opt.load_state_dict(checkpoint.get('optimizer_state_dict', {}))
             start_epoch = checkpoint.get('epoch', 0)
             best_loss = checkpoint.get('best_loss', float('inf'))
@@ -220,6 +251,19 @@ def train():
             print(f"❌ Failed to load checkpoint: {e}")
             print("🔄 Starting training from scratch...")
 
+    # 使用torch.compile加速训练（需要PyTorch 2.0+）
+    if cfg.use_torch_compile:
+        try:
+            # 检查PyTorch版本
+            if hasattr(torch, 'compile'):
+                print("🚀 Compiling model with torch.compile for faster training...")
+                model = torch.compile(model, mode='max-autotune')  # mode可选: 'default', 'reduce-overhead', 'max-autotune'
+                print("✅ Model compiled successfully! (Note: First training batch will be slower due to compilation)")
+            else:
+                print("⚠️  torch.compile not available (requires PyTorch 2.0+), skipping compilation")
+        except Exception as e:
+            print(f"⚠️  Failed to compile model: {e}, continuing without compilation")
+    
     model.train()
     for e in range(start_epoch, epochs):
         total_loss = 0

@@ -12,6 +12,7 @@ resume_checkpoint_path = "/content/drive/MyDrive/my_models/1026largeDATA_df/mode
 
 
 """Train Config"""
+use_torch_compile=True
 lr = 1e-4
 img_size = 128
 img_channel = 3
@@ -20,15 +21,15 @@ latent_size: int = 32
 num_workers_folders=12
 num_workers = 12
 
-loss_log_iter: int = 20  # loss数据print和保存至log日志的间隔 \log
+loss_log_iter: int = 10  # loss数据print和保存至log日志的间隔 \log
 
-img_save_epoch: int = 6  # avgloss和gif保存间隔 \output
+img_save_epoch: int = 2  # avgloss和gif保存间隔 \output
 
-checkpoint_save_epoch: int = 6  # checkpoint保存间隔
+checkpoint_save_epoch: int = 2  # checkpoint保存间隔
 
 
-batch_size: int = 64
-epochs: int = 30          # 测试epoch数量
+batch_size: int = 74
+epochs: int = 14          # 测试epoch数量
 
 
 test_img_path: str = "./eval_data/vae"
