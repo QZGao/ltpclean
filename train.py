@@ -26,6 +26,7 @@ Auto Save:
 """
 
 from models.vae.sdvae import SDVAE
+from models.vae.autoencoder import AutoencoderKL
 from algorithm import Algorithm
 import torch
 import config.configTrain as cfg
@@ -270,7 +271,7 @@ def train():
         print("🆕 Starting fresh training")
 
     # Get VAE and Diffusion models
-    vae = SDVAE().to(device_obj)
+    vae = AutoencoderKL().to(device_obj)
 
     # Load your own trained VAE weights
     custom_vae_path = cfg.vae_model

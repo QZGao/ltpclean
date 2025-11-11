@@ -1,6 +1,7 @@
 from torchvision.transforms import InterpolationMode
-
+from infer_test import remove_orig_mod_prefix
 from models.vae.sdvae import SDVAE
+from models.vae.autoencoder import AutoencoderKL
 import os
 import numpy as np
 from PIL import Image
@@ -39,12 +40,13 @@ def decode():
               image_paths.append(file_path)
 
   device ="cuda:0"
-  vae = SDVAE().to(device)
+  vae = AutoencoderKL().to(device)
   custom_vae_path = cfg.vae_model
   if custom_vae_path and os.path.exists(custom_vae_path):
       print(f"📥 load your own vae ckpt: {custom_vae_path}")
-      custom_state_dict = torch.load(custom_vae_path, map_location=device)
-      vae.load_state_dict(custom_state_dict['network_state_dict'], strict=False)
+      custom_state_dict = torch.load(custom_vae_path, map_location=device,weights_only=False)
+      ckpt = remove_orig_mod_prefix(custom_state_dict['network_state_dict'])
+      vae.load_state_dict(ckpt, strict=False)
       print("✅ your vae ckpt loaded successfully！")
   else:
       print("ℹ️ use default pre-trained vae ckpt")
