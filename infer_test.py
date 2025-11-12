@@ -205,6 +205,7 @@ if __name__ =="__main__":
     args = arg()
     sample_step = args.sample_step
     model = Algorithm(model_name,device)
+    model.eval().to(device)
     vae = AutoencoderKL().eval().to(device)
     custom_vae_path = vae_model
     if custom_vae_path and os.path.exists(custom_vae_path):
@@ -220,7 +221,7 @@ if __name__ =="__main__":
     state_dict = remove_orig_mod_prefix(state_dict["network_state_dict"])
     model.load_state_dict(state_dict,strict=False)
  
-    model.eval().to(device)
+   
 
     model_test(args.img,args.actions,model,vae,device,sample_step,f'{args.img[-9:-4]}_test',epoch=None,output_dir='output')
     # python infer_test.py -i 'eval_data/demo1.png' -a r,r,r,r,r,r
