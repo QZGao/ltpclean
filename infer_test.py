@@ -71,7 +71,7 @@ def init_simulator(model,vae, batch):
     decoded_obs = vae.decode(latent)
     decoded_obs = torch.clamp(decoded_obs, -1, 1)  # 确保输出在 [-1, 1] 范围
 
-    latent_for_df = latent * 0.1355
+    latent_for_df = latent * scale_factor
     latent_for_df = latent_for_df.reshape(4, 32, 32)
     init_z = model.df_model.init_df_model(latent_for_df)
     
@@ -139,7 +139,7 @@ def model_test(img_path='eval_data/demo2.png', actions=['r'], model=None,vae=Non
                 if is_cuda:
                     torch.cuda.synchronize()
                 decode_start = time.time()
-                obs = vae.decode(obs / 0.1355)
+                obs = vae.decode(obs / scale_factor)
                 obs = torch.clamp(obs, -1, 1)  # 确保输出在 [-1, 1] 范围
                 if is_cuda:
                     torch.cuda.synchronize()
@@ -205,7 +205,7 @@ if __name__ =="__main__":
     args = arg()
     sample_step = args.sample_step
     model = Algorithm(model_name,device)
-    vae = AutoencoderKL().to(device)
+    vae = AutoencoderKL().eval().to(device)
     custom_vae_path = vae_model
     if custom_vae_path and os.path.exists(custom_vae_path):
         print(f"📥 load your own vae ckpt: {custom_vae_path}")
@@ -219,6 +219,7 @@ if __name__ =="__main__":
     state_dict = torch.load(os.path.join("ckpt",model_path),map_location=device,weights_only=False)
     state_dict = remove_orig_mod_prefix(state_dict["network_state_dict"])
     model.load_state_dict(state_dict,strict=False)
+ 
     model.eval().to(device)
 
     model_test(args.img,args.actions,model,vae,device,sample_step,f'{args.img[-9:-4]}_test',epoch=None,output_dir='output')

@@ -196,7 +196,7 @@ def model_inference(user_id, stop_event):
                 
                 # VAE decode
                 decode_start = time.time()
-                obs = vae.decode(obs / 0.1355)
+                obs = vae.decode(obs / cfg.scale_factor)
                 decode_time = time.time() - decode_start
                 
                 # 在GPU上压缩图像从256x256到128x128

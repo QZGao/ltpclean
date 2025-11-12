@@ -26,7 +26,7 @@ base_ch: int = 64          # 减少基础通道数以适应GPU内存
 num_workers_folders=12
 num_workers = 12
 gradient_accumulation_steps: int = 1  # 梯度累积步数，用于模拟更大的batch size
-
+scale_factor: float = 0.7064
 
 # # Large dataset train
 # num_frames: int = 12

@@ -184,7 +184,7 @@ def load_pretrained_model(model, device_obj):
         return False
 
 
-def vae_encode(batch_data_images, vae_model, device, scale_factor=0.1355):
+def vae_encode(batch_data_images, vae_model, device, scale_factor=0.7064):
     """VAE encode the images"""
     # Encode images to latent space: [batch_size, num_frames, 3, 128, 128] -> [batch_size, num_frames, 4, 32, 32]
     with torch.no_grad():
@@ -251,6 +251,7 @@ def train():
     model = Algorithm(model_name, device_obj)
     model = model.to(device_obj)
     opt = model.df_model.configure_optimizers_gpt()
+    scale_factor = cfg.scale_factor
 
     # Initialize training state
     start_epoch = 0
@@ -359,7 +360,7 @@ def train():
                 batch_actions.to(device_obj),
                 batch_nonterminals.to(device_obj)
             ]
-            batch_data[0] = vae_encode(batch_data[0], vae, device_obj)
+            batch_data[0] = vae_encode(batch_data[0], vae, device_obj, scale_factor)
 
             # Repeat batch 14 times to increase data volume
             # over fit small dataset
