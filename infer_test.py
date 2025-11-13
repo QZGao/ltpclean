@@ -14,11 +14,12 @@ from config.configTrain import *
 from models.vae.sdvae import SDVAE
 from models.vae.autoencoder import AutoencoderKL
 def remove_orig_mod_prefix(state_dict):
-    """移除 torch.compile 导致的 _orig_mod. 前缀"""
-    if any(key.startswith('_orig_mod.') for key in state_dict.keys()):
-        return {key[len('_orig_mod.'):] if key.startswith('_orig_mod.') else key: value 
-                for key, value in state_dict.items()}
-    return state_dict
+    """移除 torch.compile 导致的 _orig_mod. 前缀（可能在开头或中间）"""
+    new_state_dict = {}
+    for key, value in state_dict.items():
+        new_key = key.replace('._orig_mod.', '.').replace('_orig_mod.', '')
+        new_state_dict[new_key] = value
+    return new_state_dict
 def get_jave_7action(key):
     if key == "r":
         action = 2
@@ -212,19 +213,25 @@ if __name__ =="__main__":
         print(f"📥 load your own vae ckpt: {custom_vae_path}")
         vae_state_dict = torch.load(custom_vae_path, map_location=device, weights_only=False)
         vae_state_dict = remove_orig_mod_prefix(vae_state_dict['network_state_dict'])
+        for key in list(vae_state_dict.keys()):
+            print(key)
         vae.load_state_dict(vae_state_dict, strict=False)
         print("✅ your vae ckpt loaded successfully！")
     else:
         print("ℹ️ use default pre-trained vae ckpt")
 
+
+    
     state_dict = torch.load(os.path.join("ckpt",model_path),map_location=device,weights_only=False)
     state_dict = remove_orig_mod_prefix(state_dict["network_state_dict"])
     model.load_state_dict(state_dict,strict=False)
+    for key in list(state_dict.keys()):
+        print(key)
  
    
 
     model_test(args.img,args.actions,model,vae,device,sample_step,f'{args.img[-9:-4]}_test',epoch=None,output_dir='output')
-    # python infer_test.py -i 'eval_data/demo1.png' -a r,r,r,r,r,r
+    # # python infer_test.py -i 'eval_data/demo1.png' -a r,r,r,r,r,r
 
 
 
