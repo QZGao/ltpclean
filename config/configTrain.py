@@ -3,7 +3,7 @@ model_name = 'df_z32_c1_dit_n11_mario_km_tanh_ldm'
 train_sample = 1
 out_dir: str = "./output"
 # data_path: str = "/content/drive/MyDrive/mario_data/"
-data_path = "./datatrain/"
+data_path = "./mario_data/mariodata/"
 ckpt_path: str = "./ckpt"
 model_path = "model_epoch115_20251029_04.pth" # infer或者load pretrain权重时候用
 device = 'cuda:0'
@@ -25,7 +25,7 @@ img_channel = 3
 base_ch: int = 64          # 减少基础通道数以适应GPU内存
 num_workers_folders=12
 num_workers = 12
-gradient_accumulation_steps: int = 4  # 梯度累积步数，用于模拟更大的batch size
+gradient_accumulation_steps: int = 3  # 梯度累积步数，用于模拟更大的batch size
 scale_factor: float = 0.7064
 
 # Large dataset train
@@ -37,7 +37,7 @@ gif_save_epoch: int = 1  # avgloss和gif保存间隔 \output
 checkpoint_save_epoch: int = 5  # checkpoint保存间隔
 min_improvement: float = 0.15  # 最小改善幅度（15%）
 batch_size: int = 42
-epochs: int = 30          # 测试epoch数量
+epochs: int = 40          # 测试epoch数量
 
 sample_step: int = 20
 

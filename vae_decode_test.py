@@ -70,7 +70,7 @@ def decode():
           decoded_img_array = get_web_img(decode[0].cpu().numpy())
           
           # 计算PSNR
-          orig_img = Image.open(p).convert('RGB').resize((cfg.image_size, cfg.image_size))
+          orig_img = Image.open(p).convert('RGB').resize((cfg.img_size, cfg.img_size))
           orig_array = np.array(orig_img)
           psnr = calculate_psnr(orig_array, decoded_img_array)
           psnr_list.append(psnr)
