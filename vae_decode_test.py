@@ -8,6 +8,15 @@ from PIL import Image
 import torchvision.transforms as transforms
 import torch
 import config.configTrain as cfg
+
+def calculate_psnr(img1, img2):
+    """计算两张图像之间的PSNR"""
+    mse = np.mean((img1 - img2) ** 2)
+    if mse == 0:
+        return float('inf')
+    max_pixel = 255.0
+    psnr = 20 * np.log10(max_pixel / np.sqrt(mse))
+    return psnr
 def get_img_data(img_path):
     img = Image.open(img_path).convert('RGB')
     transform = transforms.Compose([
@@ -51,6 +60,7 @@ def decode():
   else:
       print("ℹ️ use default pre-trained vae ckpt")
   vae.eval()
+  psnr_list = []
   with torch.no_grad():
       for p in image_paths:
           img = get_img_data(p).to(device)
@@ -58,8 +68,18 @@ def decode():
           latent = latent.sample()
           decode = vae.decode(latent)
           decoded_img_array = get_web_img(decode[0].cpu().numpy())
+          
+          # 计算PSNR
+          orig_img = Image.open(p).convert('RGB').resize((cfg.image_size, cfg.image_size))
+          orig_array = np.array(orig_img)
+          psnr = calculate_psnr(orig_array, decoded_img_array)
+          psnr_list.append(psnr)
+          print(f"{os.path.basename(p)}: PSNR = {psnr:.2f} dB")
+          
           decoded_img = Image.fromarray(decoded_img_array)
           decoded_img.save(f"{out_dir}{os.path.basename(p)}")
+  
+  print(f"\n平均PSNR: {np.mean(psnr_list):.2f} dB")
 
 if __name__=='__main__':
   decode()
