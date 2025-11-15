@@ -8,7 +8,7 @@
 txt 文件格式：
 - 每行：图像像素值（resolution*resolution*3个，按HWC顺序展平） + 动作值（1个）
 - 像素值范围：0-255
-- 分辨率：256x256
+- 分辨率：128*128
 """
 import numpy as np
 from PIL import Image
@@ -74,6 +74,6 @@ if __name__ == "__main__":
         image_path='eval_data/demo1.png',
         output_path='eval_data/0-frameArray1.txt',
         action_value=0,  # 可以根据需要修改动作值
-        resolution=126   # VAE 输入分辨率
+        resolution=128   # VAE 输入分辨率
     )
 
