@@ -13,6 +13,8 @@ from algorithm import Algorithm
 from config.configTrain import *
 from models.vae.sdvae import SDVAE
 from models.vae.autoencoder import AutoencoderKL
+
+
 def remove_orig_mod_prefix(state_dict):
     """移除 torch.compile 导致的 _orig_mod. 前缀（可能在开头或中间）"""
     new_state_dict = {}
@@ -20,6 +22,8 @@ def remove_orig_mod_prefix(state_dict):
         new_key = key.replace('._orig_mod.', '.').replace('_orig_mod.', '')
         new_state_dict[new_key] = value
     return new_state_dict
+
+
 def get_jave_7action(key):
     if key == "r":
         action = 2
@@ -46,16 +50,18 @@ def get_action_sequence(actions):
         ret.extend(get_jave_7action(a))
     return ret
 
+
 def image_to_numpy_array(filepath):
     img = Image.open(filepath)
     img_array = np.array(img)
     img_array = cv2.cvtColor(img_array, cv2.COLOR_BGR2RGB)
     return img_array
 
+
 def get_img_data(img_path):
     img = Image.open(img_path).convert('RGB')
     transform = transforms.Compose([
-        transforms.Resize((img_size, img_size),interpolation=InterpolationMode.NEAREST),
+        transforms.Resize((img_size, img_size), interpolation=InterpolationMode.NEAREST),
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),  # [-1, 1]
     ])
@@ -63,7 +69,8 @@ def get_img_data(img_path):
     img = img.unsqueeze(0)
     return img
 
-def init_simulator(model,vae, batch):
+
+def init_simulator(model, vae, batch):
     obs = batch["observations"]
 
     latent_dist = vae.encode(obs.to(model.device))
@@ -75,56 +82,59 @@ def init_simulator(model,vae, batch):
     latent_for_df = latent * scale_factor
     latent_for_df = latent_for_df.reshape(4, 32, 32)
     init_z = model.df_model.init_df_model(latent_for_df)
-    
+
     return init_z, decoded_obs
+
 
 def get_web_img(img):
     # img.shape = [c, h, w] 3,256,256
-    img_3ch = np.transpose(img, (1,2,0)) # [h, w, c]
-    img_3ch = np.clip(img_3ch*0.5+0.5, 0, 1)
-    img_3ch = (img_3ch*255.0).astype(np.uint8)
+    img_3ch = np.transpose(img, (1, 2, 0))  # [h, w, c]
+    img_3ch = np.clip(img_3ch * 0.5 + 0.5, 0, 1)
+    img_3ch = (img_3ch * 255.0).astype(np.uint8)
     return img_3ch
 
-def model_test(img_path='eval_data/demo2.png', actions=['r'], model=None,vae=None, device='cuda',sample_step =4,name='infer',epoch=None,output_dir='output'):
+
+def model_test(img_path='eval_data/demo2.png', actions=['r'], model=None, vae=None, device='cuda', sample_step=4,
+               name='infer', epoch=None, output_dir='output'):
     """测试训练好的模型"""
-    
+
     # 检查输入参数
     if model is None:
         print("❌ Error: model is None")
         return
-    
+
     if not os.path.exists(img_path):
         print(f"❌ Error: Test image not found: {img_path}")
         return
-    
+
     # 保存当前模型状态
     was_training = model.training
-    vae_was_training =vae.training
-    
+    vae_was_training = vae.training
+
     try:
         # 设置为评估模式
         model.eval()
-        img_list=[]
-        batch_data={}
-        batch_data['observations']=get_img_data(img_path) #(1,3, 256,256)
+        img_list = []
+        batch_data = {}
+        batch_data['observations'] = get_img_data(img_path)  # (1,3, 256,256)
         with torch.no_grad():
-            zeta,obs_start = init_simulator(model,vae,batch_data) #(1,32,32,32)
+            zeta, obs_start = init_simulator(model, vae, batch_data)  # (1,32,32,32)
         img_list.append(get_web_img(obs_start[0].cpu().numpy()))
-        actions=get_action_sequence(actions)
-        
+        actions = get_action_sequence(actions)
+
         # 时间统计变量
         total_diffusion_time = 0.0
         total_vae_decode_time = 0.0
         action_count = 0
-        
+
         # 检查是否为CUDA设备
         device_obj = torch.device(device) if isinstance(device, str) else device
         is_cuda = device_obj.type == 'cuda' and torch.cuda.is_available()
-        
+
         for a in actions:
             with torch.no_grad():
-                a = torch.tensor([a],device=device).long()
-                
+                a = torch.tensor([a], device=device).long()
+
                 # 计时：Diffusion step
                 if is_cuda:
                     torch.cuda.synchronize()
@@ -135,7 +145,7 @@ def model_test(img_path='eval_data/demo2.png', actions=['r'], model=None,vae=Non
                 diffusion_end = time.time()
                 diffusion_time = diffusion_end - diffusion_start
                 total_diffusion_time += diffusion_time
-                
+
                 # 计时：VAE decode
                 if is_cuda:
                     torch.cuda.synchronize()
@@ -147,22 +157,22 @@ def model_test(img_path='eval_data/demo2.png', actions=['r'], model=None,vae=Non
                 decode_end = time.time()
                 decode_time = decode_end - decode_start
                 total_vae_decode_time += decode_time
-                
+
                 action_count += 1
-                
+
             img_list.append(get_web_img(obs[0].cpu().numpy()))
-        
+
         # 计算并打印平均时间
         if action_count > 0:
             avg_diffusion_time = total_diffusion_time / action_count
             avg_vae_decode_time = total_vae_decode_time / action_count
             avg_total_time = avg_diffusion_time + avg_vae_decode_time
-            
-            print(f"⏱️  Inference Performance: Avg Diffusion Step: {avg_diffusion_time*1000:.2f}ms, "
-                  f"Avg VAE Decode: {avg_vae_decode_time*1000:.2f}ms, "
-                  f"Avg Total: {avg_total_time*1000:.2f}ms "
+
+            print(f"⏱️  Inference Performance: Avg Diffusion Step: {avg_diffusion_time * 1000:.2f}ms, "
+                  f"Avg VAE Decode: {avg_vae_decode_time * 1000:.2f}ms, "
+                  f"Avg Total: {avg_total_time * 1000:.2f}ms "
                   f"(processed {action_count} actions)")
-            
+
         if not os.path.isdir(output_dir):
             os.makedirs(output_dir)
         if epoch:
@@ -189,8 +199,11 @@ def model_test(img_path='eval_data/demo2.png', actions=['r'], model=None,vae=Non
         else:
             vae.eval()
 
+
 def parse_comma_separated_list(value):
     return value.split(',')
+
+
 def arg():
     parser = argparse.ArgumentParser(description="Direct inference of Playable Game Generation")
 
@@ -202,10 +215,11 @@ def arg():
     args = parser.parse_args()
     return args
 
-if __name__ =="__main__":
+
+if __name__ == "__main__":
     args = arg()
     sample_step = args.sample_step
-    model = Algorithm(model_name,device)
+    model = Algorithm(model_name, device)
     model.eval().to(device)
     vae = AutoencoderKL().eval().to(device)
     custom_vae_path = vae_model
@@ -213,24 +227,21 @@ if __name__ =="__main__":
         print(f"📥 load your own vae ckpt: {custom_vae_path}")
         vae_state_dict = torch.load(custom_vae_path, map_location=device, weights_only=False)
         vae_state_dict = remove_orig_mod_prefix(vae_state_dict['network_state_dict'])
-        for key in list(vae_state_dict.keys()):
-            print(key)
+        # for key in list(vae_state_dict.keys()):
+        #     print(key)
         vae.load_state_dict(vae_state_dict, strict=False)
         print("✅ your vae ckpt loaded successfully！")
     else:
         print("ℹ️ use default pre-trained vae ckpt")
 
-
-    
-    state_dict = torch.load(os.path.join("ckpt",model_path),map_location=device,weights_only=False)
+    state_dict = torch.load(os.path.join("ckpt", model_path), map_location=device, weights_only=False)
     state_dict = remove_orig_mod_prefix(state_dict["network_state_dict"])
-    model.load_state_dict(state_dict,strict=False)
-    for key in list(state_dict.keys()):
-        print(key)
- 
-   
+    model.load_state_dict(state_dict, strict=False)
+    # for key in list(state_dict.keys()):
+    #     print(key)
 
-    model_test(args.img,args.actions,model,vae,device,sample_step,f'{args.img[-9:-4]}_test',epoch=None,output_dir='output')
+    model_test(args.img, args.actions, model, vae, device, sample_step, f'{args.img[-9:-4]}_test', epoch=None,
+               output_dir='output')
     # # python infer_test.py -i 'eval_data/demo1.png' -a r,r,r,r,r,r
 
 

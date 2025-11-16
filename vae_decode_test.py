@@ -21,7 +21,7 @@ def get_img_data(img_path):
     img = Image.open(img_path).convert('RGB')
     transform = transforms.Compose([
         # transforms.Resize((image_size, image_size)),
-        transforms.Resize((128, 128),interpolation=InterpolationMode.NEAREST),
+        transforms.Resize((cfg.img_size, cfg.img_size),interpolation=InterpolationMode.NEAREST),
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),  # [-1, 1]
     ])

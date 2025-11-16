@@ -10,20 +10,22 @@ import torch
 import time
 from utils import get_data
 from algorithm import Algorithm
-from models.vae.sdvae import SDVAE
+from models.vae.autoencoder import AutoencoderKL
 import config.configTrain as cfg
-from infer_test import init_simulator, get_web_img
+from infer_test import init_simulator, get_web_img,remove_orig_mod_prefix
 import os
 """Model info"""
 frame_rate = 1 / 20
 
 model = Algorithm(cfg.model_name, cfg.device)
 state_dict = torch.load(os.path.join("ckpt",cfg.model_path),map_location=cfg.device,weights_only=False)
-model.load_state_dict(state_dict["network_state_dict"],strict=False)
+model_ckpt = remove_orig_mod_prefix(state_dict["network_state_dict"])
+model.load_state_dict(model_ckpt,strict=False)
 model.eval().to(cfg.device)
-vae = SDVAE()
+vae = AutoencoderKL()
 vae_state_dict = torch.load(cfg.vae_model, map_location=cfg.device,weights_only=False)
-vae.load_state_dict(vae_state_dict['network_state_dict'], strict=False)
+vae_ckpt = remove_orig_mod_prefix(vae_state_dict['network_state_dict'])
+vae.load_state_dict(vae_ckpt, strict=False)
 vae.eval().to(cfg.device)
 
 
@@ -151,13 +153,13 @@ def button_clicked(data):
         else:
             # 创建副本避免修改全局 init_data
             batch_data = {"observations": init_data["observations"].clone()}        
-        # 转换数据格式：从 [1, 1, 3, 256, 256] 转为 [1, 3, 256, 256]（与get_img_data格式一致）
+        # 转换数据格式：从 [1, 1, 3, 128, 128] 转为 [1, 3, 128, 128]（与get_img_data格式一致）
         if batch_data["observations"].dim() == 5:
-            batch_data["observations"] = batch_data["observations"].squeeze(1)  # [1, 1, 3, 256, 256] -> [1, 3, 256, 256]
+            batch_data["observations"] = batch_data["observations"].squeeze(1)  # [1, 1, 3, 128, 128] -> [1, 3, 128, 128]
         
         zeta,obs = init_simulator(model, vae, batch_data)
         
-        # 压缩初始帧从256x256到128x128
+        # 压缩初始帧从128x128到128x128
         obs_gpu = torch.nn.functional.interpolate(
             obs,
             size=(128, 128),
@@ -199,7 +201,7 @@ def model_inference(user_id, stop_event):
                 obs = vae.decode(obs / cfg.scale_factor)
                 decode_time = time.time() - decode_start
                 
-                # 在GPU上压缩图像从256x256到128x128
+                # 在GPU上压缩图像从128x128到128x128
                 resize_start = time.time()
                 obs_gpu = torch.nn.functional.interpolate(
                     obs,
