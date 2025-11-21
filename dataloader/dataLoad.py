@@ -117,16 +117,29 @@ class MarioDataset(Dataset):
                 last_added_frame_num = frame_num
             # 否则跳过（帧号差值<=train_sample且nt=1）
         
+        # 使用集合优化性能，筛选被跳过的帧，同时确保nt=0的帧也被包含
+        file_data_set = set(file_data)
+        remaining_file_date = [x for x in all_files if (x not in file_data_set) or (not x[2])]  # 被跳过的帧 或 nt=0的帧
         # 将最后一帧的nonterminal设置为False（游戏结束）
         if file_data:
             last_item = file_data[-1]
             file_data[-1] = (last_item[0], last_item[1], False, last_item[3])
+        if remaining_file_date:
+            last_item = remaining_file_date[-1]
+            remaining_file_date[-1] = (last_item[0], last_item[1], False, last_item[3])
         
         # 分离数据
         files = [item[0] for item in file_data]
         actions = [item[1] for item in file_data]
         nonterminals = [item[2] for item in file_data]
-        
+
+        remaining_files = [item[0] for item in remaining_file_date]
+        remaining_actions = [item[1] for item in remaining_file_date]
+        remaining_nonterminals = [item[2] for item in remaining_file_date]
+
+        files.extend(remaining_files)
+        actions.extend(remaining_actions)
+        nonterminals.extend(remaining_nonterminals)
         return files, actions, nonterminals
     
     @staticmethod
@@ -151,13 +164,11 @@ class MarioDataset(Dataset):
         else:
             action_mapped = None
         
-        # if match2:
-        #     nonterminal = int(match2.group(1))  # 修改：group(1)而不是group(2)
-        #     nonterminal = nonterminal == 1
-        # else:
-        #     nonterminal = False
         if match2:
-            nonterminal = True
+            nonterminal = int(match2.group(1))  # 读取nt的值
+            nonterminal = nonterminal == 1  # nt1=True, nt0=False
+        else:
+            nonterminal = False  # 如果没有nt标记，默认为False
         return action_mapped, nonterminal
 
 

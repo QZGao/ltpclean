@@ -2,7 +2,7 @@
 model_name = 'df_z32_c1_dit_n11_mario_km_tanh_ldm'
 train_sample = 1
 out_dir: str = "./output"
-# data_path: str = "/content/drive/MyDrive/mario_data/"
+# data_path: str = "./datatrain/"
 data_path = "./mario_data/mariodata/"
 ckpt_path: str = "./ckpt"
 model_path = "model_epoch55_20251116_07.pth" # infer或者load pretrain权重时候用
@@ -29,15 +29,15 @@ gradient_accumulation_steps: int = 3  # 梯度累积步数，用于模拟更大�
 scale_factor: float = 0.7064
 
 # Large dataset train
-num_frames: int = 12
+num_frames: int = 15
 frame_interval: int = 4
 loss_log_iter: int = 20  # loss数据print和保存至log日志的间隔 \log
 # gif_save_iter: int = 400
 gif_save_epoch: int = 1  # avgloss和gif保存间隔 \output
 checkpoint_save_epoch: int = 5  # checkpoint保存间隔
 min_improvement: float = 0.15  # 最小改善幅度（15%）
-batch_size: int = 42
-epochs: int = 40          # 测试epoch数量
+batch_size: int = 32
+epochs: int = 75          # 测试epoch数量
 
 sample_step: int = 20
 
