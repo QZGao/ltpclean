@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import math
+from pathlib import Path
 from typing import Any, Dict, List
+
+import json
 
 import torch
 from torchmetrics.image.fid import FrechetInceptionDistance
@@ -36,26 +39,32 @@ class VisualQualityEvaluator(BaseEvaluator):
     description = "Perceptual metrics such as LPIPS/PSNR/FID/FVD"
 
     def evaluate(self, context: EvaluationContext) -> Dict[str, Any]:
+        progress_file = context.output_dir / f"{self.name}.progress.json"
+        progress_data = _load_progress(progress_file)
         dataset = get_dataset(context)
         num_requested = max(1, context.extra_kwargs.get("num_trajectories", 600))
         seeds = context.seeds or [0]
 
-        results: Dict[str, Any] = {}
         for horizon in context.prediction_lengths:
             key = f"len_{horizon}"
             available = dataset.available_windows(horizon)
             if available <= 0:
-                results[key] = {
+                progress_data[key] = {
                     "status": "skipped",
                     "reason": "insufficient_data",
                 }
+                _save_progress(progress_file, progress_data)
                 continue
 
             sample_total = min(num_requested, available)
             per_seed = max(1, math.ceil(sample_total / len(seeds)))
-            horizon_results: Dict[str, Any] = {}
+            horizon_entry = progress_data.get(key, {})
+            horizon_results = horizon_entry.get("results", {})
 
             for step in context.sample_steps:
+                step_key = f"steps_{step}"
+                if step_key in horizon_results:
+                    continue
                 metrics = self._evaluate_combo(
                     context=context,
                     dataset=dataset,
@@ -65,17 +74,25 @@ class VisualQualityEvaluator(BaseEvaluator):
                     sample_total=sample_total,
                     seeds=seeds,
                 )
-                horizon_results[f"steps_{step}"] = metrics
+                horizon_results[step_key] = metrics
+                horizon_entry["status"] = "ok"
+                horizon_entry["results"] = horizon_results
+                progress_data[key] = horizon_entry
+                _save_progress(progress_file, progress_data)
 
-            results[key] = {
+            progress_data[key] = {
                 "status": "ok",
                 "results": horizon_results,
             }
+            _save_progress(progress_file, progress_data)
 
-        return {
+        final_data = {
             "status": "ok",
-            "details": results,
+            "details": progress_data,
         }
+        if progress_file.exists():
+            progress_file.unlink(missing_ok=True)
+        return final_data
 
     def _evaluate_combo(
         self,
@@ -172,8 +189,22 @@ class VisualQualityEvaluator(BaseEvaluator):
                 targets_tensor,
                 preds_tensor,
                 device=torch.device("cpu"),
+                batch_size=4,
             )
         else:
             result["fvd"] = None
 
         return result
+
+
+def _load_progress(path: Path) -> Dict[str, Any]:
+    if not path.exists():
+        return {}
+    with path.open("r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _save_progress(path: Path, data: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)

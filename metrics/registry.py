@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Dict, Iterable, List, Mapping, MutableMapping, Sequence
 
+from rich.progress import BarColumn, Progress, TaskID, TextColumn, TimeElapsedColumn
+
 from .base import BaseEvaluator, EvaluationContext
 
 
@@ -32,14 +34,27 @@ class MetricRegistry:
     def run(self, names: Sequence[str], context: EvaluationContext) -> Dict[str, Mapping]:
         if not names:
             names = self.registered_names()
-        results = {}
-        for name in names:
-            evaluator = self.get(name)
-            if not evaluator.is_applicable(context):
-                results[name] = {
-                    "status": "skipped",
-                    "reason": "not_applicable",
-                }
-                continue
-            results[name] = evaluator.evaluate(context)
+        names_to_run = list(names)
+        results: Dict[str, Mapping] = {}
+
+        with Progress(
+            TextColumn("{task.description}"),
+            BarColumn(bar_width=None),
+            "{task.completed}/{task.total}",
+            TimeElapsedColumn(),
+            transient=True,
+        ) as progress:
+            task_id: TaskID = progress.add_task("metrics", total=len(names_to_run))
+            for name in names_to_run:
+                progress.update(task_id, description=f"Running {name}")
+                evaluator = self.get(name)
+                if not evaluator.is_applicable(context):
+                    results[name] = {
+                        "status": "skipped",
+                        "reason": "not_applicable",
+                    }
+                else:
+                    results[name] = evaluator.evaluate(context)
+                progress.advance(task_id)
+
         return results

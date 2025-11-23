@@ -7,6 +7,7 @@ from typing import List
 
 import numpy as np
 from PIL import Image
+from rich.progress import BarColumn, Progress, TaskID, TextColumn, TimeRemainingColumn
 
 from config import configTrain as cfg
 
@@ -33,17 +34,27 @@ def convert_directory(input_dir: Path, output_path: Path, resolution: int) -> No
         raise RuntimeError(f"No PNG files found under {input_dir}")
 
     rows: List[np.ndarray] = []
-    for path in files:
-        frame = _load_image(path, resolution)
-        action = _extract_number(ACTION_RE, path.name)
-        flat = frame.flatten()
-        row = np.concatenate([flat, np.array([action], dtype=np.uint8)])
-        rows.append(row)
+    with Progress(
+        TextColumn("Converting frames..."),
+        BarColumn(bar_width=None),
+        "{task.completed}/{task.total}",
+        TimeRemainingColumn(),
+        transient=True,
+    ) as progress:
+        task_id: TaskID = progress.add_task("frames", total=len(files))
+        for path in files:
+            frame = _load_image(path, resolution)
+            action = _extract_number(ACTION_RE, path.name)
+            flat = frame.flatten()
+            row = np.concatenate([flat, np.array([action], dtype=np.uint8)])
+            rows.append(row)
+            progress.advance(task_id)
 
     data = np.stack(rows, axis=0)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     np.savetxt(output_path, data, fmt="%d", delimiter=",")
     print(f"Saved {len(rows)} frames to {output_path}")
+
 
 
 def parse_args() -> argparse.Namespace:
