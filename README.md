@@ -89,6 +89,10 @@ Convert ordered frame folders (e.g., `datatrain/feiyan2`) into the flattened `fr
 python build_frame_dataset.py --input-dir datatrain/feiyan2 --output eval_data/feiyan2-frameArray.txt --resolution 128
 ```
 
+You can also cap the exported trajectory length with `--max-frames <n>`; when more frames exist, the script randomly selects a contiguous block of that length (optionally seeded via `--crop-seed`) before writing the `.txt` file.
+
+If you're using `scripts/convert_recordings.bat`, set `MAX_FRAMES` and `CROP_SEED` before running to reuse the same trimming behavior across the whole dataset.
+
 Filenames of the form `*_a{ID}_*.png` automatically contribute their action ID to the final column of each row.
 
 ### 2. Train the Video-Action Model

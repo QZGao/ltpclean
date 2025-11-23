@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import random
 import re
 from pathlib import Path
 from typing import List
@@ -28,10 +29,25 @@ def _load_image(path: Path, resolution: int) -> np.ndarray:
     return np.array(img, dtype=np.uint8)
 
 
-def convert_directory(input_dir: Path, output_path: Path, resolution: int) -> None:
+def convert_directory(
+    input_dir: Path,
+    output_path: Path,
+    resolution: int,
+    max_frames: int | None = None,
+    crop_seed: int | None = None,
+) -> None:
     files = sorted(input_dir.glob("*.png"), key=lambda p: _extract_number(FRAME_RE, p.name))
     if not files:
         raise RuntimeError(f"No PNG files found under {input_dir}")
+
+    if max_frames is not None and len(files) > max_frames:
+        rng = random.Random(crop_seed)
+        start = rng.randint(0, len(files) - max_frames)
+        end = start + max_frames
+        files = files[start:end]
+        print(
+            f"Trimming {len(files)} frames from {input_dir.name}: using slice {start}:{end}"
+        )
 
     rows: List[np.ndarray] = []
     with Progress(
@@ -62,12 +78,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--input-dir", type=Path, required=True, help="Directory containing PNG frames")
     parser.add_argument("--output", type=Path, default=Path(cfg.file_path), help="Destination txt file")
     parser.add_argument("--resolution", type=int, default=cfg.img_size, help="Target square resolution")
+    parser.add_argument("--max-frames", type=int, default=None, help="Maximum frame count; uses a random contiguous slice when exceeded")
+    parser.add_argument("--crop-seed", type=int, default=None, help="Random seed for choosing the contiguous slice when `--max-frames` is set")
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
-    convert_directory(args.input_dir, args.output, args.resolution)
+    convert_directory(
+        args.input_dir,
+        args.output,
+        args.resolution,
+        args.max_frames,
+        args.crop_seed,
+    )
 
 
 if __name__ == "__main__":

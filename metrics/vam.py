@@ -46,7 +46,18 @@ def _load_state_dict(model: nn.Module, state_dict):
             state_dict = state_dict["state_dict"]
         elif "model" in state_dict:
             state_dict = state_dict["model"]
-    model.load_state_dict(state_dict, strict=False)
+    model_params = model.state_dict()
+    filtered: dict[str, torch.Tensor] = {}
+    for name, value in state_dict.items():
+        if name not in model_params:
+            continue
+        if model_params[name].shape != value.shape:
+            print(
+                f"Skipping VAM state {name} (checkpoint shape {value.shape}, model expects {model_params[name].shape})"
+            )
+            continue
+        filtered[name] = value
+    model.load_state_dict(filtered, strict=False)
 
 
 def get_vam_model(

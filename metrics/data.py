@@ -12,6 +12,7 @@ from config import configTrain as cfg
 from utils import read_file
 
 Tensor = torch.Tensor
+MIN_VAM_ACTIONS = 7
 
 
 @dataclass
@@ -77,7 +78,7 @@ class TrajectoryDataset:
 
     @property
     def num_actions(self) -> int:
-        return int(self._actions.max().item() + 1)
+        return int(max(self._actions.max().item() + 1, MIN_VAM_ACTIONS))
 
     def sample_windows(
         self,

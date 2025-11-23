@@ -51,7 +51,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--prediction-lengths",
         nargs="*",
-        default=["1", "16", "64", "256", "1024"],
+        default=["1", "2", "4", "8", "16", "32", "64"],
         help="Prediction horizons to evaluate",
     )
     parser.add_argument(

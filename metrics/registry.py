@@ -42,7 +42,7 @@ class MetricRegistry:
             BarColumn(bar_width=None),
             "{task.completed}/{task.total}",
             TimeElapsedColumn(),
-            transient=True,
+            transient=False,
         ) as progress:
             task_id: TaskID = progress.add_task("metrics", total=len(names_to_run))
             for name in names_to_run:
