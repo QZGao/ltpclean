@@ -77,6 +77,43 @@ python infer_test.py -i 'eval_data/demo1.png' -a r,r,r,r,r,r
 
 After inference is complete, the generated game content will be saved in the output directory.
 
+# 🧪 Evaluation & Metrics
+
+Use `evaluate.py` to collect visual, mechanics, and performance metrics on saved trajectories. The mechanics metrics (ActAcc/ProbDiff) require a lightweight Video-Action Model (VAM) checkpoint trained on the same action vocabulary as your evaluation data.
+
+### 1. Prepare trajectory text files
+
+Convert ordered frame folders (e.g., `datatrain/feiyan2`) into the flattened `frameArray` format consumed by the evaluation loader:
+
+```
+python build_frame_dataset.py --input-dir datatrain/feiyan2 --output eval_data/feiyan2-frameArray.txt --resolution 128
+```
+
+Filenames of the form `*_a{ID}_*.png` automatically contribute their action ID to the final column of each row.
+
+### 2. Train the Video-Action Model
+
+Train the mechanics classifier on the generated dataset and save the checkpoint inside `ckpt/`:
+
+```
+python train_vam.py --data-path eval_data/feiyan2-frameArray.txt --window 17 --stride 1 --batch-size 32 --epochs 10 --output ckpt/vam_model.pt
+```
+
+The script exposes additional flags for clip stride, max clips, AMP, device selection, and validation split so you can balance speed and accuracy.
+
+### 3. Run the evaluator
+
+```
+python evaluate.py \
+	--dataset eval_data/feiyan2-frameArray.txt \
+	--vam-checkpoint ckpt/vam_model.pt \
+	--vam-window 17 \
+	--metrics mechanics visual performance \
+	--num-trajectories 128 --prediction-lengths 32 64 --sample-steps 2 4 --pretty-print
+```
+
+All metrics now run end-to-end, and ActAcc/ProbDiff will only skip when horizons are shorter than the requested VAM window.
+
 # 📋 Project Status
 
 ![Current Progress](./statics/current.png)
