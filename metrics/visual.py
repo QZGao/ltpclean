@@ -114,7 +114,8 @@ class VisualQualityEvaluator(BaseEvaluator):
         fvd_metric = None
         video_preds: List[torch.Tensor] | None = None
         video_targets: List[torch.Tensor] | None = None
-        if horizon > 1:
+        skip_fvd = context.extra_kwargs.get("skip_fvd", False)
+        if horizon > 1 and not skip_fvd:
             if _HAS_TORCHMETRICS_FVD:
                 fvd_metric = FrechetVideoDistance(feature=2048).to(device)
             else:
@@ -162,8 +163,10 @@ class VisualQualityEvaluator(BaseEvaluator):
                         fvd_metric.update(targets_01.unsqueeze(0), real=True)
                         fvd_metric.update(preds_01.unsqueeze(0), real=False)
                     elif video_preds is not None and video_targets is not None:
-                        video_targets.append(targets_01.permute(1, 0, 2, 3).unsqueeze(0).cpu())
-                        video_preds.append(preds_01.permute(1, 0, 2, 3).unsqueeze(0).cpu())
+                        # Limit video collection to prevent memory issues (max 20 videos for FVD on 4GB GPU)
+                        if len(video_preds) < 20:
+                            video_targets.append(targets_01.permute(1, 0, 2, 3).unsqueeze(0).cpu())
+                            video_preds.append(preds_01.permute(1, 0, 2, 3).unsqueeze(0).cpu())
 
                     lpips_val = lpips_metric(preds_norm, targets_norm)
                     total_lpips += lpips_val.item() * preds_norm.shape[0]
@@ -229,12 +232,18 @@ class VisualQualityEvaluator(BaseEvaluator):
             # I3D network requires minimum 16 frames after downsampling
             # Skip FVD for short horizons (typically len_1 and len_16 are too short)
             if preds_tensor.shape[2] >= 16:
+                # Clear GPU cache before FVD computation
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                # Use CPU for I3D to avoid GPU OOM on 4GB cards
+                # Note: Only uses first 20 videos, so FVD is approximate
                 result["fvd"] = _compute_fvd(
                     targets_tensor,
                     preds_tensor,
-                    device=device,
-                    batch_size=4,
+                    device=torch.device("cpu"),
+                    batch_size=1,  # Very conservative for safety
                 )
+                result["fvd_video_count"] = preds_tensor.shape[0]  # Track how many videos used
             else:
                 result["fvd"] = None
         else:

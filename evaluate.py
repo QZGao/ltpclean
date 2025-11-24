@@ -135,6 +135,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=128,
         help="Max horizon for performance benchmarking. Set to 0 to use longest prediction length. Default 128 for speed.",
     )
+    parser.add_argument(
+        "--skip-fvd",
+        action="store_true",
+        help="Skip FVD computation (saves significant time/memory). Only LPIPS/PSNR/FID will be computed.",
+    )
     return parser
 
 
@@ -208,6 +213,7 @@ def main() -> None:
             "min_frame_change": args.min_frame_change,
             "per_frame_metrics": args.per_frame_metrics,
             "performance_horizon": args.performance_horizon,
+            "skip_fvd": args.skip_fvd,
         },
     )
 

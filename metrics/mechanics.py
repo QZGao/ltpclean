@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import math
+from pathlib import Path
 from typing import Any, Dict, List
 
 import torch
@@ -22,6 +24,13 @@ class MechanicsAccuracyEvaluator(BaseEvaluator):
     description = "Action-aware accuracy metrics (ActAcc/ProbDiff)"
 
     def evaluate(self, context: EvaluationContext) -> Dict[str, Any]:
+        progress_file = context.output_dir / f"{self.name}.progress.json"
+        if progress_file.exists():
+            with open(progress_file, "r") as f:
+                results = json.load(f)
+        else:
+            results = {}
+        
         dataset = get_dataset(context)
         vam = get_vam_model(context, dataset.num_actions)
         if vam is None:
@@ -33,15 +42,20 @@ class MechanicsAccuracyEvaluator(BaseEvaluator):
         window = max(2, int(context.extra_kwargs.get("vam_window", 17)))
         seeds = context.seeds or [0]
         num_requested = max(1, context.extra_kwargs.get("num_trajectories", 600))
-
-        results: Dict[str, Any] = {}
         for horizon in context.prediction_lengths:
             key = f"len_{horizon}"
+            
+            # Skip if already completed
+            if key in results and results[key].get("status") == "ok":
+                continue
+            
             if horizon < window:
                 results[key] = {
                     "status": "skipped",
                     "reason": "horizon_lt_vam_window",
                 }
+                with open(progress_file, "w") as f:
+                    json.dump(results, f, indent=2)
                 continue
 
             available = dataset.available_windows(horizon)
@@ -50,6 +64,8 @@ class MechanicsAccuracyEvaluator(BaseEvaluator):
                     "status": "skipped",
                     "reason": "insufficient_data",
                 }
+                with open(progress_file, "w") as f:
+                    json.dump(results, f, indent=2)
                 continue
 
             sample_total = min(num_requested, available)
@@ -57,6 +73,11 @@ class MechanicsAccuracyEvaluator(BaseEvaluator):
             horizon_results: Dict[str, Any] = {}
 
             for step in context.sample_steps:
+                step_key = f"steps_{step}"
+                if key in results and "results" in results[key] and step_key in results[key]["results"]:
+                    horizon_results[step_key] = results[key]["results"][step_key]
+                    continue
+                    
                 metrics = self._evaluate_combo(
                     context=context,
                     dataset=dataset,
@@ -68,13 +89,25 @@ class MechanicsAccuracyEvaluator(BaseEvaluator):
                     seeds=seeds,
                     window=window,
                 )
-                horizon_results[f"steps_{step}"] = metrics
+                horizon_results[step_key] = metrics
+                results[key] = {
+                    "status": "ok",
+                    "results": horizon_results,
+                }
+                with open(progress_file, "w") as f:
+                    json.dump(results, f, indent=2)
 
             results[key] = {
                 "status": "ok",
                 "results": horizon_results,
             }
+            with open(progress_file, "w") as f:
+                json.dump(results, f, indent=2)
 
+        # Clean up progress file on successful completion
+        if progress_file.exists():
+            progress_file.unlink(missing_ok=True)
+        
         return {
             "status": "ok",
             "details": results,

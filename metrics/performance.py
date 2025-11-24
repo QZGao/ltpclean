@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import math
 import time
+from pathlib import Path
 from typing import Any, Dict, List
 
 import torch
@@ -16,12 +18,24 @@ class InteractionEfficiencyEvaluator(BaseEvaluator):
     description = "Runtime efficiency / FPS benchmarking"
 
     def evaluate(self, context: EvaluationContext) -> Dict[str, Any]:
+        progress_file = context.output_dir / f"{self.name}.progress.json"
+        if progress_file.exists():
+            with open(progress_file, "r") as f:
+                saved_data = json.load(f)
+                results = saved_data.get("results", {})
+                fps_horizon = saved_data.get("horizon", 0)
+        else:
+            results = {}
+            fps_horizon = 0
+        
         dataset = get_dataset(context)
         seeds = context.seeds or [0]
         num_requested = max(1, context.extra_kwargs.get("num_trajectories", 600))
         # Use configurable max horizon for performance benchmarking (default 128 for speed)
         max_perf_horizon = context.extra_kwargs.get("performance_horizon", 128)
-        fps_horizon = min(max(context.prediction_lengths), max_perf_horizon) if max_perf_horizon > 0 else max(context.prediction_lengths)
+        if fps_horizon == 0:
+            fps_horizon = min(max(context.prediction_lengths), max_perf_horizon) if max_perf_horizon > 0 else max(context.prediction_lengths)
+        
         available = dataset.available_windows(fps_horizon)
         if available <= 0:
             return {
@@ -32,8 +46,11 @@ class InteractionEfficiencyEvaluator(BaseEvaluator):
         sample_total = min(num_requested, available)
         per_seed = max(1, math.ceil(sample_total / len(seeds)))
 
-        results = {}
         for step in context.sample_steps:
+            step_key = f"steps_{step}"
+            if step_key in results:
+                continue
+                
             metrics = self._benchmark_step(
                 context=context,
                 dataset=dataset,
@@ -43,8 +60,14 @@ class InteractionEfficiencyEvaluator(BaseEvaluator):
                 sample_total=sample_total,
                 seeds=seeds,
             )
-            results[f"steps_{step}"] = metrics
+            results[step_key] = metrics
+            with open(progress_file, "w") as f:
+                json.dump({"horizon": fps_horizon, "results": results}, f, indent=2)
 
+        # Clean up progress file
+        if progress_file.exists():
+            progress_file.unlink(missing_ok=True)
+        
         return {
             "status": "ok",
             "horizon": fps_horizon,
