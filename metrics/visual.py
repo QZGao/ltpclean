@@ -185,12 +185,17 @@ class VisualQualityEvaluator(BaseEvaluator):
         elif video_preds:
             preds_tensor = torch.cat(video_preds, dim=0)
             targets_tensor = torch.cat(video_targets, dim=0)
-            result["fvd"] = _compute_fvd(
-                targets_tensor,
-                preds_tensor,
-                device=torch.device("cpu"),
-                batch_size=4,
-            )
+            # I3D network requires minimum 16 frames after downsampling
+            # Skip FVD for short horizons (typically len_1 and len_16 are too short)
+            if preds_tensor.shape[2] >= 16:
+                result["fvd"] = _compute_fvd(
+                    targets_tensor,
+                    preds_tensor,
+                    device=device,
+                    batch_size=4,
+                )
+            else:
+                result["fvd"] = None
         else:
             result["fvd"] = None
 

@@ -3,8 +3,8 @@ setlocal enabledelayedexpansion
 
 rem Adjust these paths or arguments as needed
 set INPUT_ROOT=eval_data\recordings
-set OUTPUT_ROOT=eval_data\metrics
-set "VAM_CHECKPOINT=ckpt\vam_model.pt"
+set OUTPUT_ROOT=eval_data\metrics2
+set "VAM_CHECKPOINT=ckpt\model_epoch75_20251122_09.pth"
 set "EXTRA_ARGS=%*"
 if defined VAM_CHECKPOINT set "EXTRA_ARGS=!EXTRA_ARGS! --vam-checkpoint %VAM_CHECKPOINT%"
 
