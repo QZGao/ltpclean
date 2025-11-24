@@ -95,11 +95,22 @@ class TrajectoryDataset:
         rng.shuffle(indices)
         selected = indices[: min(count, len(indices))]
         windows: List[TrajectoryWindow] = []
+        
+        # Filter for dynamic sequences (configurable threshold)
+        min_change_threshold = getattr(self, 'min_frame_change', 0.01)  # Mean absolute diff
+        
         for idx in selected:
             frames = self._frames[idx : idx + horizon + 1]
             init_frame = frames[0].to(self.device)
             target_frames = frames[1:].to(self.device)
             actions = self._actions[idx : idx + horizon].to(self.device)
+            
+            # Skip near-static sequences if filtering is enabled
+            if min_change_threshold > 0:
+                frame_diff = torch.abs(target_frames[0] - init_frame).mean().item()
+                if frame_diff < min_change_threshold:
+                    continue
+            
             windows.append(
                 TrajectoryWindow(
                     init_frame=init_frame,
@@ -126,5 +137,7 @@ def get_dataset(context) -> TrajectoryDataset:
     dataset = cache.get(_DATASET_CACHE_KEY)
     if dataset is None:
         dataset = TrajectoryDataset(context.dataset_path, context.device)
+        # Apply dynamic sequence filtering if requested
+        dataset.min_frame_change = context.extra_kwargs.get("min_frame_change", 0.0)
         cache[_DATASET_CACHE_KEY] = dataset
     return dataset

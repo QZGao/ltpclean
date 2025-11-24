@@ -118,6 +118,23 @@ def build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Pretty-print JSON results to stdout",
     )
+    parser.add_argument(
+        "--min-frame-change",
+        type=float,
+        default=0.005,
+        help="Minimum mean pixel change (on [-1,1] scale) to include sequence in evaluation. Default 0.005 filters static frames.",
+    )
+    parser.add_argument(
+        "--per-frame-metrics",
+        action="store_true",
+        help="Report metrics at specific timesteps (4th, 8th, 16th frame) in addition to overall average",
+    )
+    parser.add_argument(
+        "--performance-horizon",
+        type=int,
+        default=128,
+        help="Max horizon for performance benchmarking. Set to 0 to use longest prediction length. Default 128 for speed.",
+    )
     return parser
 
 
@@ -188,6 +205,9 @@ def main() -> None:
             "num_trajectories": args.num_trajectories,
             "vam_checkpoint": args.vam_checkpoint,
             "vam_window": args.vam_window,
+            "min_frame_change": args.min_frame_change,
+            "per_frame_metrics": args.per_frame_metrics,
+            "performance_horizon": args.performance_horizon,
         },
     )
 

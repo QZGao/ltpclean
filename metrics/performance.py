@@ -19,7 +19,9 @@ class InteractionEfficiencyEvaluator(BaseEvaluator):
         dataset = get_dataset(context)
         seeds = context.seeds or [0]
         num_requested = max(1, context.extra_kwargs.get("num_trajectories", 600))
-        fps_horizon = min(max(context.prediction_lengths), 128)
+        # Use configurable max horizon for performance benchmarking (default 128 for speed)
+        max_perf_horizon = context.extra_kwargs.get("performance_horizon", 128)
+        fps_horizon = min(max(context.prediction_lengths), max_perf_horizon) if max_perf_horizon > 0 else max(context.prediction_lengths)
         available = dataset.available_windows(fps_horizon)
         if available <= 0:
             return {

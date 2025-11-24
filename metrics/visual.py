@@ -29,8 +29,12 @@ def _to_zero_one(t: torch.Tensor) -> torch.Tensor:
 
 
 def _batch_psnr(pred: torch.Tensor, target: torch.Tensor, eps: float = 1e-8) -> torch.Tensor:
-    mse = torch.mean((pred - target) ** 2, dim=(1, 2, 3))
-    psnr = 10.0 * torch.log10(1.0 / (mse + eps))
+    """Compute PSNR assuming inputs are in [0, 1] range (converts to 255 scale)."""
+    # Scale [0,1] to [0,255] for standard PSNR calculation
+    pred_255 = pred * 255.0
+    target_255 = target * 255.0
+    mse = torch.mean((pred_255 - target_255) ** 2, dim=(1, 2, 3))
+    psnr = 10.0 * torch.log10(255.0 ** 2 / (mse + eps))
     return psnr
 
 
@@ -121,6 +125,10 @@ class VisualQualityEvaluator(BaseEvaluator):
         total_psnr = 0.0
         frame_counter = 0
         video_counter = 0
+        
+        # Per-frame metrics for specific timesteps
+        per_frame_metrics_enabled = context.extra_kwargs.get("per_frame_metrics", False)
+        per_frame_stats = {}  # {timestep: {lpips: [], psnr: []}}
 
         processed = 0
         with torch.inference_mode():
@@ -161,6 +169,26 @@ class VisualQualityEvaluator(BaseEvaluator):
                     total_lpips += lpips_val.item() * preds_norm.shape[0]
                     psnr_vals = _batch_psnr(preds_01, targets_01)
                     total_psnr += psnr_vals.sum().item()
+                    
+                    # Collect per-frame metrics for specific timesteps
+                    if per_frame_metrics_enabled:
+                        timesteps_to_track = [4, 8, 16, 32, 64]
+                        for t_idx in range(preds_norm.shape[0]):
+                            timestep = t_idx + 1  # 1-indexed
+                            if timestep in timesteps_to_track:
+                                if timestep not in per_frame_stats:
+                                    per_frame_stats[timestep] = {"lpips": [], "psnr": []}
+                                
+                                # Compute metrics for this specific frame
+                                frame_lpips = lpips_metric(
+                                    preds_norm[t_idx:t_idx+1], 
+                                    targets_norm[t_idx:t_idx+1]
+                                ).item()
+                                frame_psnr = psnr_vals[t_idx].item()
+                                
+                                per_frame_stats[timestep]["lpips"].append(frame_lpips)
+                                per_frame_stats[timestep]["psnr"].append(frame_psnr)
+                    
                     frame_counter += preds_norm.shape[0]
                     video_counter += 1
 
@@ -179,6 +207,19 @@ class VisualQualityEvaluator(BaseEvaluator):
             "psnr": total_psnr / frame_counter,
             "fid": fid_score,
         }
+        
+        # Add per-frame metrics if enabled
+        if per_frame_metrics_enabled and per_frame_stats:
+            per_frame_summary = {}
+            for timestep, stats in sorted(per_frame_stats.items()):
+                if stats["lpips"]:
+                    per_frame_summary[f"frame_{timestep}"] = {
+                        "count": len(stats["lpips"]),
+                        "lpips": sum(stats["lpips"]) / len(stats["lpips"]),
+                        "psnr": sum(stats["psnr"]) / len(stats["psnr"]),
+                    }
+            if per_frame_summary:
+                result["per_frame"] = per_frame_summary
 
         if fvd_metric is not None and video_counter > 0:
             result["fvd"] = fvd_metric.compute().item()
