@@ -104,10 +104,7 @@ class MechanicsAccuracyEvaluator(BaseEvaluator):
             with open(progress_file, "w") as f:
                 json.dump(results, f, indent=2)
 
-        # Clean up progress file on successful completion
-        if progress_file.exists():
-            progress_file.unlink(missing_ok=True)
-        
+        # Keep progress file for reference (don't auto-delete)
         return {
             "status": "ok",
             "details": results,

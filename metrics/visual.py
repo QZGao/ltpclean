@@ -94,8 +94,7 @@ class VisualQualityEvaluator(BaseEvaluator):
             "status": "ok",
             "details": progress_data,
         }
-        if progress_file.exists():
-            progress_file.unlink(missing_ok=True)
+        # Keep progress file for reference (don't auto-delete)
         return final_data
 
     def _evaluate_combo(

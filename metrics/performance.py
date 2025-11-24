@@ -64,10 +64,7 @@ class InteractionEfficiencyEvaluator(BaseEvaluator):
             with open(progress_file, "w") as f:
                 json.dump({"horizon": fps_horizon, "results": results}, f, indent=2)
 
-        # Clean up progress file
-        if progress_file.exists():
-            progress_file.unlink(missing_ok=True)
-        
+        # Keep progress file for reference (don't auto-delete)
         return {
             "status": "ok",
             "horizon": fps_horizon,
